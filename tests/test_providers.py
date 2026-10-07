@@ -49,6 +49,7 @@ class ProviderTests(unittest.TestCase):
         url, headers, payload = transport.call_args.args
         self.assertEqual(payload["input"], self.messages)
         self.assertNotIn("tools", payload)
+        self.assertNotIn("reasoning", payload)
         self.assertNotIn("response_format", payload)
         self.assertNotIn(DUMMY_KEY, str(payload))
         self.assertNotIn(DUMMY_KEY, url)
@@ -65,6 +66,7 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(payload["system"], self.messages[0]["content"])
         self.assertEqual(payload["messages"], self.messages[1:])
         self.assertEqual(payload["max_tokens"], 512)
+        self.assertNotIn("thinking", payload)
         self.assertEqual(response.unsupported_parameters, ("seed",))
 
     def test_google_normalization_and_seed(self):
@@ -82,6 +84,43 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(headers["x-goog-api-key"], DUMMY_KEY)
         self.assertEqual(payload["generationConfig"], {"temperature": 0, "topP": 1, "maxOutputTokens": 512, "seed": 20261007})
         self.assertEqual(payload["contents"][0]["parts"][0]["text"], self.messages[1]["content"])
+
+    def test_frozen_gemini_sampling_omissions_are_explicit_and_never_sent(self):
+        adapter, transport = self.adapter("google", HTTPReply(200, {
+            "modelVersion": "dummy-runtime-version", "candidates": [
+                {"content": {"parts": [{"text": DUMMY_TEXT}]}, "finishReason": "STOP"}]}))
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": DUMMY_KEY}):
+            response = adapter.generate(self.messages, model="gemini-3.8-flash", parameters=PARAMETERS,
+                supported_parameters={"max_output_tokens", "seed"}, execute_live=True)
+        self.assertIsNone(response.error)
+        self.assertEqual(response.requested_parameters["temperature"], 0)
+        self.assertEqual(response.requested_parameters["top_p"], 1)
+        self.assertEqual(response.effective_parameters["temperature"], "unsupported")
+        self.assertEqual(response.effective_parameters["top_p"], "unsupported")
+        self.assertEqual(set(response.unsupported_parameters), {"temperature", "top_p"})
+        payload = transport.call_args.args[2]
+        self.assertEqual(payload["generationConfig"], {"maxOutputTokens": 512, "seed": 20261007})
+        self.assertNotIn("temperature", payload["generationConfig"])
+        self.assertNotIn("topP", payload["generationConfig"])
+        self.assertNotIn("thinkingConfig", payload["generationConfig"])
+        self.assertEqual(response.requested_model, "gemini-3.8-flash")
+        self.assertEqual(response.reported_model, "dummy-runtime-version")
+
+    def test_gemini_cannot_accidentally_send_documented_unsupported_sampling(self):
+        adapter, transport = self.adapter("google", HTTPReply(200, {"candidates": [
+            {"content": {"parts": [{"text": DUMMY_TEXT}]}}]}))
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": DUMMY_KEY}):
+            response = adapter.generate(self.messages, model="gemini-3.8-flash", parameters=PARAMETERS,
+                supported_parameters=adapter.wire_supported, execute_live=True)
+        self.assertEqual(response.effective_parameters["temperature"], "unsupported")
+        self.assertNotIn("temperature", transport.call_args.args[2]["generationConfig"])
+        self.assertNotIn("topP", transport.call_args.args[2]["generationConfig"])
+
+    def test_gemini_sampling_exception_is_not_applied_to_other_google_models(self):
+        adapter, transport = self.adapter("google", None)
+        response = self.call(adapter, supported={"max_output_tokens", "seed"})
+        self.assertEqual(response.error.category, "unsupported_required_parameters")
+        transport.assert_not_called()
 
     def test_all_adapters_refuse_implicit_live_calls(self):
         for provider, cls in PROVIDER_CLASSES.items():

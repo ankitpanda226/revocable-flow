@@ -14,7 +14,20 @@
     "top_p": 1,
     "max_output_tokens": 512
   },
-  "models": [],
+  "models": [
+    {
+      "provider": "openai",
+      "model": "gpt-5.6-sol"
+    },
+    {
+      "provider": "google",
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5"
+    }
+  ],
   "conditions": [
     "pre_update",
     "post_update"
@@ -41,49 +54,49 @@
     {
       "provider": "openai",
       "display_name": "GPT-5.6 Sol",
-      "model_id": null,
-      "status": "unresolved",
+      "model_id": "gpt-5.6-sol",
+      "status": "enabled",
       "verification_date": "2026-10-07",
-      "documentation_source": "https://developers.openai.com/api/docs/models",
-      "immutable_snapshot": null,
-      "notes": "Official documentation access attempt returned HTTP 403 (proxy tunnel). Date records the attempt, not successful verification. No API identifier or parameter support verified; disabled pending official verification.",
+      "documentation_source": "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+      "immutable_snapshot": false,
+      "notes": "Identifier independently verified by the researcher on 2026-10-07 using the linked official source. Moving alias; preserve reported model/version. Temperature 0, top_p 1 and token limit follow the existing mock-tested REST adapter contract; seed is unsupported by this transport. Provider reasoning defaults; no live compatibility test performed.",
       "parameter_support": {
-        "temperature": "unresolved",
-        "top_p": "unresolved",
-        "max_output_tokens": "unresolved",
-        "seed": "unresolved"
+        "temperature": "supported",
+        "top_p": "supported",
+        "max_output_tokens": "supported",
+        "seed": "unsupported"
       }
     },
     {
       "provider": "google",
       "display_name": "Gemini 3.8 Flash",
-      "model_id": null,
-      "status": "unresolved",
+      "model_id": "gemini-3.8-flash",
+      "status": "enabled",
       "verification_date": "2026-10-07",
-      "documentation_source": "https://ai.google.dev/gemini-api/docs/models",
-      "immutable_snapshot": null,
-      "notes": "Official documentation access attempt returned HTTP 403 (proxy tunnel). Date records the attempt, not successful verification. No API identifier or parameter support verified; disabled pending official verification.",
+      "documentation_source": "https://ai.google.dev/gemini-api/docs/latest-model",
+      "immutable_snapshot": false,
+      "notes": "Identifier and sampling omission guidance independently verified by the researcher on 2026-10-07 using the linked official source. Moving alias; preserve reported model/version. Requested temperature 0 and top_p 1 are unsupported and omitted; use provider defaults. Token limit and seed use the existing generateContent adapter contract. No live compatibility test performed.",
       "parameter_support": {
-        "temperature": "unresolved",
-        "top_p": "unresolved",
-        "max_output_tokens": "unresolved",
-        "seed": "unresolved"
+        "temperature": "unsupported",
+        "top_p": "unsupported",
+        "max_output_tokens": "supported",
+        "seed": "supported"
       }
     },
     {
       "provider": "anthropic",
       "display_name": "Claude Sonnet 5.5",
-      "model_id": null,
-      "status": "unresolved",
+      "model_id": "claude-sonnet-5-5",
+      "status": "enabled",
       "verification_date": "2026-10-07",
-      "documentation_source": "https://platform.claude.com/docs/en/about-claude/models/overview",
-      "immutable_snapshot": null,
-      "notes": "Official documentation access attempt returned HTTP 403 (proxy tunnel). Date records the attempt, not successful verification. No API identifier or parameter support verified; disabled pending official verification.",
+      "documentation_source": "https://www.anthropic.com/claude-sonnet-5-5",
+      "immutable_snapshot": false,
+      "notes": "Identifier independently verified by the researcher on 2026-10-07 using the linked official source. Moving alias; preserve reported model/version. Temperature 0, top_p 1 and token limit follow the existing mock-tested REST adapter contract; seed is unsupported by this transport. Provider reasoning defaults; no live compatibility test performed.",
       "parameter_support": {
-        "temperature": "unresolved",
-        "top_p": "unresolved",
-        "max_output_tokens": "unresolved",
-        "seed": "unresolved"
+        "temperature": "supported",
+        "top_p": "supported",
+        "max_output_tokens": "supported",
+        "seed": "unsupported"
       }
     }
   ],

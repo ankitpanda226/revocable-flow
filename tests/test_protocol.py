@@ -74,9 +74,12 @@ class ProtocolTests(unittest.TestCase):
                             for s in self.scenarios if s.expected_action is Action.BLOCK))
 
     def test_default_config_and_model_gate(self):
-        self.assertEqual(self.config["models"], [])
+        self.assertEqual(len(self.config["models"]), 3)
+        require_frozen_models(self.config)
+        empty = deepcopy(self.config)
+        empty["models"] = []
         with self.assertRaises(ValidationError):
-            require_frozen_models(self.config)
+            require_frozen_models(empty)
 
     def test_future_model_list_schema(self):
         def legacy_config(c):

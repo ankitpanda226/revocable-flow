@@ -1,25 +1,33 @@
-# Exploratory pilot model matrix
+# Frozen exploratory pilot model matrix — 2026-10-07
 
-The intended design uses one representative family from each of OpenAI, Google and Anthropic. This is a small exploratory comparison, not exhaustive provider coverage, a ranking of all models, or evidence that one family is objectively better. These family names are the researcher's intended candidates, not verified availability claims.
+The exploratory pilot uses one intended representative family from OpenAI, Anthropic and Google. This is not exhaustive provider coverage, a ranking of all models, or evidence that one family is objectively better. No live model output has been observed.
 
-## Verification status on 2026-10-07
+## Enabled identifiers and verification provenance
 
-| Provider | Intended display family | Exact API ID | Status | Official documentation source | Snapshot classification |
-|---|---|---|---|---|---|
-| OpenAI | GPT-5.6 Sol | Unresolved; null | Disabled / unresolved | [Official model catalog](https://developers.openai.com/api/docs/models) | Unknown |
-| Google | Gemini 3.8 Flash | Unresolved; null | Disabled / unresolved | [Official model catalog](https://ai.google.dev/gemini-api/docs/models) | Unknown |
-| Anthropic | Claude Sonnet 5.5 | Unresolved; null | Disabled / unresolved | [Official model overview](https://platform.claude.com/docs/en/about-claude/models/overview) | Unknown |
+| Provider | Display family | Enabled API ID | Official source | Immutable snapshot |
+|---|---|---|---|---|
+| OpenAI | GPT-5.6 Sol | `gpt-5.6-sol` | [Official model page](https://developers.openai.com/api/docs/models/gpt-5.6-sol) | false |
+| Anthropic | Claude Sonnet 5.5 | `claude-sonnet-5-5` | [Official model page](https://www.anthropic.com/claude-sonnet-5-5) | false |
+| Google | Gemini 3.8 Flash | `gemini-3.8-flash` | [Official model documentation](https://ai.google.dev/gemini-api/docs/latest-model) | false |
 
-Read-only HTTPS attempts to all three official sources on 2026-10-07 failed with `Tunnel connection failed: 403 Forbidden`. No official page content was obtained. Therefore **no exact API identifier has been verified**, and no candidate identifier is inserted into configuration. The proposed `gpt-5.6-sol` and `gemini-3.8-flash` identifiers are user-supplied candidates only; they have not been validated. No Anthropic identifier was guessed or substituted.
+The researcher independently verified these exact identifiers against the linked official sources on **2026-10-07** and supplied that verification for this freeze. The environment's earlier documentation requests were blocked with HTTP 403; this update relies on researcher-provided verification, not a claim that the environment retrieved those pages. Config status is enabled for exactly these three entries, and `models` lists those entries in existing matrix order (OpenAI, Google, Anthropic).
 
-In [pilot_eval.yaml](../configs/pilot_eval.yaml), verification_date records this unsuccessful attempt date for unresolved entries; status and notes explicitly distinguish it from successful verification. All model_id and immutable_snapshot values are null, all parameter-support fields unresolved, and `models: []`. This matrix is a reproducible record of an unresolved selection, **not a completed executable model freeze**. The dry-run previews 40 × 2 × 3 = 240 hypothetical requests, with 0 enabled requests.
+These identifiers are provider aliases rather than frozen dated snapshots. Availability, alias targets, API defaults and schemas may change. Every eventual raw response preserves requested_model and reported_model/modelVersion when returned (null otherwise). A returned name is not automatically an immutable snapshot; interpret provider version metadata before making reproducibility claims. Never substitute a model mid-run or silently replace an unavailable alias.
 
-## Requirements before enabling
+## Requested versus effective settings
 
-Obtain current official documentation for each intended family. Record the exact API ID, successful verification date, official source URL, immutable_snapshot boolean and availability/parameter notes. Prefer immutable dated/versioned snapshots where the provider offers them. If only a moving/stable alias exists, record the alias and its limitation; raw response metadata records reported_model/modelVersion when exposed, otherwise null. A reported version is provenance, not proof that the provider is fully reproducible.
+The frozen requested settings stay temperature=0, top_p=1, max_output_tokens=512, seed=20261007 and repetitions=1. No provider-specific reasoning-effort or thinking-budget settings are supplied; use provider defaults. No tools, browsing, retrieval, extra context or native structured-output enforcement is enabled.
 
-Verify model support for temperature 0 **and** top_p 1 together, max_output_tokens 512, the chosen REST endpoint and generation seed. Individual parameter support does not prove that their combination is accepted. Set each parameter_support value to supported or unsupported only after verification. Required temperature/top_p/token settings cannot be silently omitted or changed: incompatible models are blocked pending a prospective protocol revision. A generation seed may be unsupported, as allowed by the frozen protocol; then it is omitted and logged explicitly. No reasoning-effort, thinking-budget, tool, browsing, retrieval or structured-output settings are added by these adapters. Review provider defaults and token-budget implications before enabling a reasoning model.
+| Provider | Sent sampling parameters | Seed handling | Recorded difference |
+|---|---|---|---|
+| OpenAI Responses | temperature=0, top_p=1 | Omitted by this REST adapter | requested seed retained; unsupported_parameters includes seed |
+| Anthropic Messages | temperature=0, top_p=1 | Omitted by this REST adapter | requested seed retained; unsupported_parameters includes seed |
+| Google Gemini 3.8 Flash | Neither temperature nor top_p sent | Sent using existing generateContent adapter contract | requested temperature=0/top_p=1 retained; effective values are `unsupported`; both names recorded as unsupported |
 
-Set status verified only after identifier and compatibility verification; the config's models list must exactly project the verified matrix entries in matrix order. Disabled/unresolved entries never become requests. Configuration validation checks consistency and official URL hosts, but cannot authenticate a maintainer's verification assertion. Commit the completed matrix and execution code before collecting model outputs, and obtain explicit approval for live calls. No adapter compatibility claim for these intended families has yet been demonstrated.
+The researcher supplied current official Gemini guidance to remove temperature and top_p. This explicitly authorizes a model-specific compatibility exception to Milestone 3's general rejection of unsupported sampling settings. It changes effective API settings, not requested settings, prompts, benchmark labels or scoring. Only the exact Gemini alias receives this exception; unrelated models and unsupported output-token limits remain blocked. Missing controls mean provider defaults apply; the runner does not invent numeric effective sampling values. Comparisons cannot claim identical effective sampling or deterministic generation across providers.
 
-Model availability, aliases, API schemas, defaults and pricing can change. Reverify and prospectively version changes; do not replace a model mid-run. The three REST adapters have only synthetic mock tests. A later approved sanity test should select one verified model, at most 3 scenarios and post_update only. No such test was run in this milestone.
+OpenAI/Anthropic parameter handling and token/seed mappings follow the existing REST contracts encoded in the repository and are verified with synthetic adapter tests. Google token-limit/seed mappings also use that existing contract. No live test or independent in-environment documentation retrieval has established model-specific acceptance, joint parameter compatibility or provider default behavior. Later approved sanity tests must check acceptance; incompatible requests are recorded as provider errors, never silently retuned or semantically retried.
+
+## Freeze and next step
+
+Full plan: 40 scenarios × 2 conditions × 3 enabled models = **240 intended requests**. Full and filtered dry-runs validate configuration, hashes, ordering and prompts while making zero network calls. The alias matrix is frozen; live execution still needs explicit research approval, environment-only credentials, a clean committed checkout and a unique run ID. No live sanity test, benchmark experiment, ablation or experimental result is included in this freeze. Pricing remains unconfigured, so cost estimate is unavailable.

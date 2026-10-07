@@ -128,6 +128,10 @@ class Adapter:
     def normalize(self, reply: HTTPReply) -> dict:
         raise NotImplementedError
 
+    @classmethod
+    def allowed_omissions(cls, model):
+        return frozenset()
+
     def generate(self, conversation, *, model, parameters, supported_parameters, execute_live=False):
         if execute_live is not True:
             raise ValidationError("provider calls require explicit execute_live")
@@ -145,19 +149,21 @@ class Adapter:
         if not isinstance(model, str) or not model.strip():
             raise ValidationError("requested model must be nonempty")
         requested = dict(parameters)
-        supported = set(supported_parameters) & self.wire_supported
+        allowed_omissions = self.allowed_omissions(model)
+        supported = set(supported_parameters) & (self.wire_supported - allowed_omissions)
         unsupported = tuple(sorted(set(requested) - supported))
-        effective = {k: v for k, v in requested.items() if k in supported}
+        wire_parameters = {k: v for k, v in requested.items() if k in supported}
+        effective = {**wire_parameters, **{k: "unsupported" for k in allowed_omissions & set(unsupported)}}
         metadata = dict(provider=self.provider, requested_model=model, requested_parameters=requested,
                         effective_parameters=effective, unsupported_parameters=unsupported)
-        if any(k in unsupported for k in ("temperature", "top_p", "max_output_tokens")):
+        if (set(unsupported) & {"temperature", "top_p", "max_output_tokens"}) - allowed_omissions:
             return ProviderResponse(**metadata, error=ProviderError("unsupported_required_parameters"))
         key = os.environ.get(self.credential_variable)
         if not key:
             return ProviderResponse(**metadata, error=ProviderError("missing_credentials"))
         started = time.monotonic()
         try:
-            reply = self.transport(self.endpoint_for(model), self.headers(key), self.payload(conversation, model, effective))
+            reply = self.transport(self.endpoint_for(model), self.headers(key), self.payload(conversation, model, wire_parameters))
         except TransportFailure as exc:
             return ProviderResponse(**metadata, latency_ms=(time.monotonic()-started)*1000,
                                     error=ProviderError(exc.category))

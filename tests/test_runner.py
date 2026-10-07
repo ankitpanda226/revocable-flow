@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 from revocable_flow.cli import main
 from revocable_flow.protocol import canonical_json, load_protocol_config
-from revocable_flow.providers import OpenAIProvider
+from revocable_flow.providers import OpenAIProvider, GoogleProvider
 from revocable_flow.providers.base import HTTPReply
 from revocable_flow.runner import execute_plan, persist_manifest, plan_run, preview
 from revocable_flow.schema import ValidationError
@@ -30,6 +30,11 @@ class RunnerTests(unittest.TestCase):
         (root / "configs").mkdir(exist_ok=True)
         config = deepcopy(load_protocol_config(CONFIG))
         config["benchmark"]["path"] = str(ROOT / "data/pilot/scenarios.jsonl")
+        config["models"] = []
+        for entry in config["model_matrix"]:
+            entry.update(status="unresolved", model_id=None, immutable_snapshot=None,
+                         notes="Synthetic disabled fixture, not official verification.",
+                         parameter_support={k: "unresolved" for k in ("temperature", "top_p", "max_output_tokens", "seed")})
         if enabled:
             entry = next(m for m in config["model_matrix"] if m["provider"] == provider)
             entry.update(model_id="dummy-fixture-model", status="verified", immutable_snapshot=False,
@@ -55,20 +60,29 @@ class RunnerTests(unittest.TestCase):
         return OpenAIProvider(transport=transport), transport
 
     def execute(self, plan, adapter, **kwargs):
-        with patch.dict(os.environ, {"OPENAI_API_KEY": DUMMY_KEY}), patch("revocable_flow.runner._git", return_value=GIT):
-            return execute_plan(plan, execute_live=True, adapters={"openai": adapter}, **kwargs)
+        with patch.dict(os.environ, {adapter.credential_variable: DUMMY_KEY}), patch("revocable_flow.runner._git", return_value=GIT):
+            return execute_plan(plan, execute_live=True, adapters={adapter.provider: adapter}, **kwargs)
 
-    def test_actual_matrix_all_unresolved_and_disabled(self):
+    def test_actual_matrix_exactly_three_enabled_researcher_verified_aliases(self):
         plan = plan_run(CONFIG)
         report = preview(plan)
         self.assertEqual(report["scenario_count"], 40)
         self.assertEqual(report["configured_models"], 3)
         self.assertEqual(report["prompts_constructed"], 80)
-        self.assertEqual(report["enabled_models"], 0)
-        self.assertEqual(report["expected_requests"], 0)
+        self.assertEqual(report["enabled_models"], 3)
+        self.assertEqual(report["expected_requests"], 240)
         self.assertEqual(report["expected_requests_if_all_selected_enabled"], 240)
-        self.assertTrue(all(m["model_id"] is None for m in plan.manifest["model_matrix"]))
+        expected = {"openai": "gpt-5.6-sol", "anthropic": "claude-sonnet-5-5", "google": "gemini-3.8-flash"}
+        self.assertEqual({m["provider"]: m["model_id"] for m in plan.manifest["model_matrix"]}, expected)
+        self.assertTrue(all(m["status"] == "enabled" and m["immutable_snapshot"] is False
+                            for m in plan.manifest["model_matrix"]))
         self.assertEqual(report["cost_note"], "cost estimate unavailable")
+        google = next(p for p in report["provider_checks"] if p["provider"] == "google")
+        self.assertFalse(google["required_settings_supported"])
+        self.assertTrue(google["settings_compatible"])
+        self.assertEqual(google["requested_parameters"]["temperature"], 0)
+        self.assertEqual(google["effective_parameters"]["temperature"], "unsupported")
+        self.assertEqual(google["effective_parameters"]["top_p"], "unsupported")
 
     def test_dry_run_blocks_network_and_does_not_create_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -98,10 +112,12 @@ class RunnerTests(unittest.TestCase):
                 execute_plan(plan, execute_live=value)
 
     def test_unresolved_model_refuses_live_without_network(self):
-        with patch("urllib.request.urlopen", side_effect=AssertionError("network forbidden")) as network:
-            with self.assertRaisesRegex(ValidationError, "no verified"):
-                execute_plan(plan_run(CONFIG), execute_live=True)
-            network.assert_not_called()
+        with tempfile.TemporaryDirectory() as directory:
+            plan = self.plan(self.fixture(directory, enabled=False))
+            with patch("urllib.request.urlopen", side_effect=AssertionError("network forbidden")) as network:
+                with self.assertRaisesRegex(ValidationError, "no verified"):
+                    execute_plan(plan, execute_live=True)
+                network.assert_not_called()
 
     def test_missing_credentials_do_not_create_results(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -204,6 +220,43 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(overall["over_refusal_rate"]["denominator"], 20)
             self.assertEqual(len(list((plan.root / "raw").rglob("*.response.json"))), 80)
 
+    def test_gemini_artifacts_preserve_sampling_difference_for_errors_and_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.fixture(directory, provider="google")
+            config = json.loads(path.read_text())
+            entry = next(e for e in config["model_matrix"] if e["provider"] == "google")
+            entry.update(model_id="gemini-3.8-flash", status="enabled",
+                         parameter_support={"temperature": "unsupported", "top_p": "unsupported",
+                                            "max_output_tokens": "supported", "seed": "supported"})
+            config["models"] = [{"provider": "google", "model": "gemini-3.8-flash"}]
+            path.write_text(json.dumps(config))
+            plan = self.plan(path, provider="google", scenario_limit=1, condition="post_update")
+            text = "malformed fixture output\n{"
+            transport = Mock(side_effect=[HTTPReply(503, None), HTTPReply(200, {
+                "modelVersion": "dummy-reported-version", "candidates": [{"content": {
+                    "parts": [{"text": text}]}, "finishReason": "STOP"}]})])
+            summary = self.execute(plan, GoogleProvider(transport=transport), sleep=Mock())
+            self.assertEqual(summary["completed"], 1)
+            for call in transport.call_args_list:
+                generation = call.args[2]["generationConfig"]
+                self.assertNotIn("temperature", generation)
+                self.assertNotIn("topP", generation)
+                self.assertNotIn("thinkingConfig", generation)
+            records = [json.loads(p.read_text()) for p in sorted((plan.root / "raw").rglob("*.response.json"))]
+            self.assertEqual(len(records), 2)
+            for record in records:
+                self.assertEqual(record["requested_model"], "gemini-3.8-flash")
+                self.assertEqual(record["requested_parameters"]["temperature"], 0)
+                self.assertEqual(record["requested_parameters"]["top_p"], 1)
+                self.assertEqual(record["effective_parameters"]["temperature"], "unsupported")
+                self.assertEqual(record["effective_parameters"]["top_p"], "unsupported")
+            self.assertEqual(records[-1]["parameters"]["temperature"], "unsupported")
+            self.assertEqual(records[-1]["raw_output"], text)
+            self.assertEqual(records[-1]["parse_status"], "invalid")
+            self.assertEqual(records[-1]["reported_model"], "dummy-reported-version")
+            self.execute(plan, GoogleProvider(transport=transport), resume=True)
+            self.assertEqual(transport.call_count, 2)
+
     def test_required_unsupported_parameter_refuses_plan(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.fixture(directory)
@@ -300,13 +353,15 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(len(list((plan.root / "raw").rglob("*.response.json"))), 2)
 
     def test_live_cli_shows_cost_count_preview_before_refusing_unresolved_matrix(self):
-        with redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()), \
-                patch("urllib.request.urlopen", side_effect=AssertionError("network forbidden")) as network:
-            with self.assertRaises(SystemExit):
-                main(["pilot-run", "--config", str(CONFIG), "--execute-live", "--run-id", "not-executed"])
-        self.assertIn('"execution_preview"', output.getvalue())
-        self.assertIn('"expected_requests_if_all_selected_enabled": 240', output.getvalue())
-        network.assert_not_called()
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.fixture(directory, enabled=False)
+            with redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()), \
+                    patch("urllib.request.urlopen", side_effect=AssertionError("network forbidden")) as network:
+                with self.assertRaises(SystemExit):
+                    main(["pilot-run", "--config", str(config), "--execute-live", "--run-id", "not-executed"])
+            self.assertIn('"execution_preview"', output.getvalue())
+            self.assertIn('"expected_requests_if_all_selected_enabled": 240', output.getvalue())
+            network.assert_not_called()
 
     def test_nonretryable_and_exhausted_failure_do_not_restart_attempt_count(self):
         for statuses in ([401], [503, 503, 503]):

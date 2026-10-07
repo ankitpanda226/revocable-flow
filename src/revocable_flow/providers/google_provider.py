@@ -8,6 +8,11 @@ class GoogleProvider(Adapter):
     credential_variable = "GOOGLE_API_KEY"
     wire_supported = {"temperature", "top_p", "max_output_tokens", "seed"}
 
+    @classmethod
+    def allowed_omissions(cls, model):
+        # Explicit researcher-authorized compatibility exception, not tuning.
+        return frozenset({"temperature", "top_p"}) if model == "gemini-3.8-flash" else frozenset()
+
     def endpoint_for(self, model):
         return "https://generativelanguage.googleapis.com/v1beta/models/" + quote(model, safe="") + ":generateContent"
 

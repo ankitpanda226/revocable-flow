@@ -306,7 +306,8 @@ def summarize_scores(scenarios: list[Scenario], scores: list[TrialScore]) -> dic
 def make_raw_record(*, scenario: Scenario, raw_output: str, execution_index: int,
                     provider: str, model: str, timestamp: str, condition: str,
                     parameters: dict, latency_ms: float | None = None,
-                    request_id: str | None = None, history: str = "full_history") -> dict:
+                    request_id: str | None = None, history: str = "full_history",
+                    unsupported_parameters: tuple[str, ...] = ()) -> dict:
     """Response artifact only; callers supply metadata, never credentials/headers."""
     from datetime import datetime, timezone
     condition_order(execution_index)
@@ -321,11 +322,17 @@ def make_raw_record(*, scenario: Scenario, raw_output: str, execution_index: int
     if instant.tzinfo is None or instant.utcoffset() != timezone.utc.utcoffset(instant):
         raise ValidationError("timestamp must specify UTC")
     _keys(parameters, {"temperature", "top_p", "max_output_tokens", "seed"}, "generation parameters")
-    if (type(parameters["temperature"]) not in (int, float)
-            or type(parameters["top_p"]) not in (int, float)
-            or type(parameters["max_output_tokens"]) is not int
-            or parameters["temperature"] != 0 or parameters["top_p"] != 1
-            or parameters["max_output_tokens"] != 512):
+    omitted = set(unsupported_parameters)
+    if omitted - {"temperature", "top_p"}:
+        raise ValidationError("only declared sampling omissions are accepted")
+    for name, requested_value in (("temperature", 0), ("top_p", 1)):
+        value = parameters[name]
+        if name in omitted:
+            if value != "unsupported":
+                raise ValidationError("omitted sampling setting must be marked unsupported")
+        elif type(value) not in (int, float) or value != requested_value:
+            raise ValidationError("generation settings differ from protocol")
+    if type(parameters["max_output_tokens"]) is not int or parameters["max_output_tokens"] != 512:
         raise ValidationError("generation settings differ from protocol")
     if parameters["seed"] is not None and (type(parameters["seed"]) is not int or parameters["seed"] != 20261007):
         raise ValidationError("seed must be frozen value or null if unsupported")

@@ -112,21 +112,28 @@ def plan_run(config_path, *, run_id="dry-preview", provider=None, model=None,
                 and (model is None or m["model_id"] == model)]
     if not selected:
         raise ValidationError("no configured model matches selection")
-    enabled = [m for m in selected if m["status"] == "verified"]
+    enabled = [m for m in selected if m["status"] in {"enabled", "verified"}]
     parameters = {k: config["execution"][k] for k in ("temperature", "top_p", "max_output_tokens", "seed")}
     provider_checks = []
     for entry in selected:
         adapter = PROVIDER_CLASSES[entry["provider"]]
+        allowed_omissions = adapter.allowed_omissions(entry["model_id"])
+        supported_wire = adapter.wire_supported - allowed_omissions
         unsupported = sorted(k for k, status in entry["parameter_support"].items()
-                             if status != "supported" or k not in adapter.wire_supported)
-        required_ok = not (set(unsupported) & {"temperature", "top_p", "max_output_tokens"})
+                             if status != "supported" or k not in supported_wire)
+        required_ok = not ((set(unsupported) & {"temperature", "top_p", "max_output_tokens"}) - allowed_omissions)
         provider_checks.append({"provider": entry["provider"], "status": entry["status"],
                                 "unsupported_or_unresolved_parameters": unsupported,
-                                "required_settings_supported": required_ok})
-        if entry["status"] == "verified" and any(status == "supported" and k not in adapter.wire_supported
+                                "required_settings_supported": not (set(unsupported) & {"temperature", "top_p", "max_output_tokens"}),
+                                "settings_compatible": required_ok,
+                                "requested_parameters": parameters.copy(),
+                                "effective_parameters": {k: ("unsupported" if k in unsupported else v)
+                                                         for k, v in parameters.items()},
+                                "documented_sampling_omissions": sorted(allowed_omissions)})
+        if entry["status"] in {"enabled", "verified"} and any(status == "supported" and k not in supported_wire
                 for k, status in entry["parameter_support"].items()):
             raise ValidationError("matrix capability conflicts with adapter API transport")
-        if entry["status"] == "verified" and not required_ok:
+        if entry["status"] in {"enabled", "verified"} and not required_ok:
             raise ValidationError("verified model cannot execute frozen required generation settings")
     root = config_path.absolute().parent / config["artifacts"]["root"]
     # Normalize '..' without resolving away symlinks before validation.
@@ -250,7 +257,7 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
     _copy_frozen_bytes(plan.root, plan.manifest["benchmark_artifact"], plan.benchmark_bytes)
     _copy_frozen_bytes(plan.root, plan.manifest["benchmark_metadata_artifact"], plan.metadata_bytes)
     run_id = plan.manifest["run_id"]
-    active = {m["provider"]: m for m in plan.manifest["model_matrix"] if m["status"] == "verified"}
+    active = {m["provider"]: m for m in plan.manifest["model_matrix"] if m["status"] in {"enabled", "verified"}}
     adapters = adapters if adapters is not None else {p: PROVIDER_CLASSES[p]() for p in used}
     catalog = {(p["execution_index"], p["condition"]): p for p in plan.manifest["prompt_catalog"]}
     completed, failures, ambiguous = [], [], []
@@ -319,7 +326,8 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
             effective = {k: response.effective_parameters.get(k) for k in ("temperature", "top_p", "max_output_tokens", "seed")}
             record = make_raw_record(scenario=scenario, raw_output=response.raw_output, execution_index=index,
                 provider=provider, model=request["model"], timestamp=_now(), condition=condition,
-                parameters=effective, latency_ms=response.latency_ms, request_id=response.request_id)
+                parameters=effective, latency_ms=response.latency_ms, request_id=response.request_id,
+                unsupported_parameters=tuple(k for k in response.unsupported_parameters if k in {"temperature", "top_p"}))
             record.update(metadata)
             record["provider_error"] = None
             _write(plan.root, response_path, record)
