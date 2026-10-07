@@ -1,0 +1,9 @@
+{
+  "benchmark": "../data/pilot/scenarios.jsonl",
+  "seed": 20261007,
+  "provider": "none_offline",
+  "model": "not_run",
+  "model_parameters": {"temperature": 0, "max_output_tokens": 512},
+  "prompt_version": "pilot-v0.2-conversation-only",
+  "annotation_version": "exact-permission-tuples-v0.2"
+}

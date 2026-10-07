@@ -1,0 +1,12 @@
+{
+  "benchmark_name": "RevocableFlow Pilot",
+  "version": "0.2",
+  "scenario_count": 40,
+  "created_from": "v0.1 audit revision",
+  "schema_version": "0.2",
+  "scenario_file": "scenarios.jsonl",
+  "sha256": "17e4da22029b31b280fcf711bec9c88f261f01ee40dd45137a2ad2540ed4c80d",
+  "parent_sha256": "d5f4134fa59bf7da78b91ab03b26acff7e1f6ce403c49ac1951db1734a705e03",
+  "ordering_seed": 20261007,
+  "scenario_ids_preserved": true
+}
