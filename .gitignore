@@ -8,3 +8,5 @@ dist/
 runs/
 .env
 .env.*
+# Experimental raw/parsed/summary artifacts are archived separately, never committed.
+results/

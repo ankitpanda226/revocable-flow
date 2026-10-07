@@ -61,7 +61,7 @@ Related cases share `family_id`. Eight two-member families and 24 singleton fami
 
 ## Planned experiments
 
-After explicit approval: freeze prompts, ordering, independent conversation state, annotation/error handling, model parameters and repetitions; obtain independent gold review; add provider adapters and deterministic tool simulation; preserve full provider responses and tool traces. A small exploratory transcript-based pilot can assess basic feasibility. Native tool-agent behavior, broader comparisons, runtime privacy enforcement and task-utility evaluation remain later work.
+The prospective protocol now specifies prompts, ordering, independent conversation state, annotation/error handling, parameters and repetitions. Final provider/model IDs, provider support review, independent gold review and API execution approval remain pending. A small exploratory transcript-based pilot can assess basic feasibility after those prerequisites. Native tool-agent behavior, deterministic tool simulation, broader comparisons, runtime privacy enforcement and task-utility evaluation remain later work.
 
 ## Research hypotheses
 
@@ -71,4 +71,10 @@ Untested hypotheses include persistence of obsolete consent, misapplication of g
 
 No LLM has been executed. No leakage rate, SALR value, provider comparison, significance, defense effectiveness or utility cost has been demonstrated. Passing dummy-prediction tests validates software only. No FlowGuard or provider integration exists.
 
-The v0.2 audit is in [docs/pilot_v02_audit.md](docs/pilot_v02_audit.md). It supports a small exploratory text-action pilot under the stated conventions, with independent review and a frozen execution/annotation protocol still recommended before research claims. Remaining weaknesses include a small hand-authored set, synthetic markers, explicit changes, short contexts, uneven domain counts, related templates and unexecuted tools. The preserved [v0.1 audit](docs/pilot_audit.md) is historical, not an assessment of the revised file.
+The v0.2 audit is in [docs/pilot_v02_audit.md](docs/pilot_v02_audit.md). It supports a small exploratory text-action pilot under the stated conventions. The prospective protocol is now documented below; independent review and a later model/execution freeze remain prerequisites before research claims. Remaining weaknesses include a small hand-authored set, synthetic markers, explicit changes, short contexts, uneven domain counts, related templates and unexecuted tools. The preserved [v0.1 audit](docs/pilot_audit.md) is historical, not an assessment of the revised file.
+
+## Evaluation Protocol
+
+The prospective exploratory pilot protocol is specified before model outputs: [experiment scope and reproducibility](docs/experiment_protocol.md), [exact prompts and counterfactuals](docs/prompting_protocol.md), [structured-output rubric](docs/annotation_rubric.md), and [analysis plan](docs/pilot_analysis_plan.md). [pilot_eval.yaml](configs/pilot_eval.yaml) pins v0.2 and keeps `models: []`; final model IDs and API execution require a later freeze and approval.
+
+Local helpers in `revocable_flow.protocol` implement configuration checks, visible transcripts, seeded ordering, strict JSON parsing, field/paired scoring and raw response preservation. They supplement the unchanged annotation-based evaluator. No provider client, experiment, ablation or confidence-interval computation has run; all tests use dummy outputs. The benchmark file and labels remain unchanged.
