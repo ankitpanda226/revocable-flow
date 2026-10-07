@@ -1,23 +1,18 @@
-"""Offline evaluation and a future-provider boundary. No API integrations."""
+"""Offline evaluation; execution is isolated in the explicitly gated runner."""
 import hashlib
 import json
 import platform
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol
 from . import __version__
 from .loader import load_predictions, load_scenarios, validate_metadata
 from .metrics import compute_metrics
 from .schema import ValidationError, parse_json
 
 
-class ModelProvider(Protocol):
-    """Future adapters receive conversation only and return untouched raw text.
-
-    Execution, retries, tool simulation and annotation are intentionally not implemented.
-    """
-    def generate(self, conversation: list[dict[str, str]], *, parameters: dict) -> str: ...
+# Backward import seam: the shared response interface lives outside offline scoring.
+from .providers.base import ModelProvider
 
 
 def load_config(path: str | Path) -> dict:

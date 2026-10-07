@@ -13,7 +13,7 @@ Working paper title: **RevocableFlow: Evaluating Dynamic Privacy and Consent in 
 - Conversations of 5–9 turns with 0–3 task turns between update and final tool request. Requests often use field/job aliases defined earlier. Scope updates do not repeat permitted values.
 - SALR eligibility based on exact requested invalidated tuples: 32 eligible targets, excluding the 8 retained-grant controls.
 - Strict JSONL validation, version/hash metadata, family IDs for related cases, and offline metrics grouped by transition, domain, family and prospective violation type.
-- Evaluation artifacts preserving supplied raw outputs, exact inputs, configuration, hashes, benchmark version, Git state and software versions. No API client or model execution loop.
+- Evaluation artifacts preserving supplied raw outputs, exact inputs, configuration, hashes, benchmark version, Git state and software versions. The offline evaluator preserves supplied outputs; the separately gated runner is described below.
 
 Python 3.11+ is sufficient; runtime and tests use only the standard library. From the repository root:
 
@@ -69,7 +69,7 @@ Untested hypotheses include persistence of obsolete consent, misapplication of g
 
 ## Not yet demonstrated
 
-No LLM has been executed. No leakage rate, SALR value, provider comparison, significance, defense effectiveness or utility cost has been demonstrated. Passing dummy-prediction tests validates software only. No FlowGuard or provider integration exists.
+No LLM has been executed. No leakage rate, SALR value, provider comparison, significance, defense effectiveness or utility cost has been demonstrated. Passing dummy-prediction tests validates software only. No FlowGuard exists. Provider adapters are tested with mocks only; intended model IDs remain unresolved and disabled.
 
 The v0.2 audit is in [docs/pilot_v02_audit.md](docs/pilot_v02_audit.md). It supports a small exploratory text-action pilot under the stated conventions. The prospective protocol is now documented below; independent review and a later model/execution freeze remain prerequisites before research claims. Remaining weaknesses include a small hand-authored set, synthetic markers, explicit changes, short contexts, uneven domain counts, related templates and unexecuted tools. The preserved [v0.1 audit](docs/pilot_audit.md) is historical, not an assessment of the revised file.
 
@@ -77,4 +77,16 @@ The v0.2 audit is in [docs/pilot_v02_audit.md](docs/pilot_v02_audit.md). It supp
 
 The prospective exploratory pilot protocol is specified before model outputs: [experiment scope and reproducibility](docs/experiment_protocol.md), [exact prompts and counterfactuals](docs/prompting_protocol.md), [structured-output rubric](docs/annotation_rubric.md), and [analysis plan](docs/pilot_analysis_plan.md). [pilot_eval.yaml](configs/pilot_eval.yaml) pins v0.2 and keeps `models: []`; final model IDs and API execution require a later freeze and approval.
 
-Local helpers in `revocable_flow.protocol` implement configuration checks, visible transcripts, seeded ordering, strict JSON parsing, field/paired scoring and raw response preservation. They supplement the unchanged annotation-based evaluator. No provider client, experiment, ablation or confidence-interval computation has run; all tests use dummy outputs. The benchmark file and labels remain unchanged.
+Local helpers in `revocable_flow.protocol` implement configuration checks, visible transcripts, seeded ordering, strict JSON parsing, field/paired scoring and raw response preservation. They supplement the unchanged annotation-based evaluator. No experiment, ablation or confidence-interval computation has run; all tests use dummy outputs. Milestone 3 adds the gated runner below. The benchmark file and labels remain unchanged.
+
+
+## Model runner and matrix
+
+[Model matrix](docs/model_matrix.md) records three intended provider families, all disabled/unresolved because official documentation access returned HTTP 403. No exact API IDs were verified or guessed. [Runner design](docs/runner_design.md) describes standard-library REST adapters, opt-in live execution, manifest-first artifacts, retry/resume behavior and optional cost previews. The benchmark and frozen evaluation semantics remain unchanged.
+
+```sh
+PYTHONPATH=src python -m revocable_flow.cli pilot-run --dry-run
+PYTHONPATH=src python -m revocable_flow.cli pilot-run --provider openai --scenario-limit 3 --dry-run
+```
+
+Dry-run makes zero network calls and writes no results by default: 40 scenarios, 2 conditions, 3 configured families, **240 requests if all enabled; 0 currently enabled**. Omitting both `--dry-run` and `--execute-live` fails. Live calls require verified compatible models, environment credentials, clean committed code, a unique run ID and explicit approval. No live model request or sanity experiment has been run.

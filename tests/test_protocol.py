@@ -79,7 +79,10 @@ class ProtocolTests(unittest.TestCase):
             require_frozen_models(self.config)
 
     def test_future_model_list_schema(self):
-        config = self.config_change(lambda c: c.update(models=[{"provider": "dummy", "model": "dummy-model"}]))
+        def legacy_config(c):
+            c.pop("model_matrix", None)
+            c.update(models=[{"provider": "dummy", "model": "dummy-model"}])
+        config = self.config_change(legacy_config)
         require_frozen_models(config)  # Necessary gate only; does not execute anything.
 
     def test_config_rejects_drift_and_credentials(self):

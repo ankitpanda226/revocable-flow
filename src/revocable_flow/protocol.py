@@ -40,8 +40,12 @@ def _keys(value, keys, name):
 def load_protocol_config(path: str | Path) -> dict:
     """Accept the JSON subset of YAML only; reject silent configuration drift."""
     config = parse_json(Path(path).read_text(encoding="utf-8"))
-    _keys(config, {"protocol_version", "benchmark", "execution", "models", "conditions",
-                   "ablation", "retry", "analysis", "artifacts"}, "config")
+    if not isinstance(config, dict):
+        raise ValidationError("config must be an object")
+    optional = {"model_matrix", "pricing"}
+    _keys({k: v for k, v in config.items() if k not in optional},
+          {"protocol_version", "benchmark", "execution", "models", "conditions",
+           "ablation", "retry", "analysis", "artifacts"}, "config")
     benchmark = config["benchmark"]
     _keys(benchmark, {"name", "version", "hash", "commit", "path"}, "benchmark")
     expected = {"name": "RevocableFlow Pilot", "version": "0.2", "hash": BENCHMARK_HASH,
@@ -85,6 +89,8 @@ def load_protocol_config(path: str | Path) -> dict:
         raise ValidationError("analysis policy differs from frozen protocol")
     if config["artifacts"] != {"root": "../results"}:
         raise ValidationError("artifact layout differs from frozen protocol")
+    from .model_config import validate_matrix
+    validate_matrix(config)
     return config
 
 

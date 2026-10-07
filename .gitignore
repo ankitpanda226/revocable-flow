@@ -10,3 +10,5 @@ runs/
 .env.*
 # Experimental raw/parsed/summary artifacts are archived separately, never committed.
 results/
+secrets/
+credentials/
