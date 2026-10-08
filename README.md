@@ -94,3 +94,5 @@ Dry-run makes zero network calls and writes no results by default: 40 scenarios,
 ## Manual GitHub sanity run
 
 The [Gemini sanity workflow](.github/workflows/gemini-sanity.yml) is manually triggered on main and uses the existing runner for three Google post-update scenarios. It enforces a three-request cap and one attempt per case, checks the frozen benchmark before calls, and uploads only inspected artifacts as `gemini-sanity-results`. See [launch and artifact instructions](docs/github_actions_sanity.md). Adding this workflow does not execute it; no model API call was made from Codex during this change.
+
+For read-only model availability troubleshooting, use the manual [Gemini models diagnostic](docs/gemini_models_diagnostic.md). It makes one authenticated models.list request and no generation calls.

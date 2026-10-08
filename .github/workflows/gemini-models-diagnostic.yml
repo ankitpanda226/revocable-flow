@@ -1,0 +1,49 @@
+{
+  "name": "Gemini models diagnostic",
+  "on": {
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "diagnostic": {
+      "if": "github.ref == 'refs/heads/main'",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 5,
+      "env": {
+        "PYTHONPATH": "src"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "fetch-depth": 0,
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Install project",
+          "run": "python -m pip install ."
+        },
+        {
+          "name": "Run offline tests and validate benchmark",
+          "run": "python -m unittest discover -s tests -v\npython -m revocable_flow.cli validate data/pilot/scenarios.jsonl --pilot"
+        },
+        {
+          "name": "One read-only authenticated models.list request",
+          "env": {
+            "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}"
+          },
+          "run": "python .github/scripts/gemini_models_diagnostic.py"
+        }
+      ]
+    }
+  }
+}
