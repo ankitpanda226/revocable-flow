@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from revocable_flow.cli import main
+from revocable_flow.artifact_safety import stage_archive
 from revocable_flow.protocol import canonical_json, load_protocol_config
 from revocable_flow.providers import OpenAIProvider, GoogleProvider
 from revocable_flow.providers.base import HTTPReply
@@ -25,6 +26,38 @@ GIT = {"commit": "dummy-committed-fixture", "dirty": False}
 
 
 class RunnerTests(unittest.TestCase):
+    def test_bounded_google_mock_run_stages_exact_research_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.fixture(directory, provider="google")
+            config = json.loads(path.read_text())
+            entry = next(m for m in config["model_matrix"] if m["provider"] == "google")
+            entry["model_id"] = "gemini-3.8-flash"
+            entry["parameter_support"].update(temperature="unsupported", top_p="unsupported")
+            config["models"] = [{"provider": "google", "model": "gemini-3.8-flash"}]
+            path.write_text(json.dumps(config))
+            plan = self.plan(path, provider="google", model="gemini-3.8-flash",
+                             scenario_limit=3, condition="post_update",
+                             max_provider_requests=3, max_attempts_per_request=1)
+            raw = ' {"action":"BLOCK","release_fields":[]}\n'
+            transport = Mock(return_value=HTTPReply(200, {
+                "modelVersion": "dummy-Gemini-snapshot",
+                "candidates": [{"content": {"parts": [{"text": raw}]}, "finishReason": "STOP"}],
+                "usageMetadata": {"promptTokenCount": 11, "candidatesTokenCount": 7}
+            }))
+            adapter = GoogleProvider(transport=transport)
+            summary = self.execute(plan, adapter)
+            self.assertTrue(summary["complete"])
+            self.assertEqual(transport.call_count, 3)
+            destination = Path(directory) / "safe-archive"
+            with patch.dict(os.environ, {"GOOGLE_API_KEY": DUMMY_KEY}):
+                self.assertGreater(stage_archive(plan.root, plan.manifest["run_id"], destination), 0)
+            source_files = {p.relative_to(plan.root): p.read_bytes() for p in plan.root.rglob("*") if p.is_file()}
+            archived_files = {p.relative_to(destination): p.read_bytes() for p in destination.rglob("*") if p.is_file()}
+            self.assertEqual(archived_files, source_files)
+            responses = list(destination.rglob("*.response.json"))
+            self.assertEqual(len(responses), 3)
+            self.assertTrue(all(json.loads(p.read_text())["raw_output"] == raw for p in responses))
+
     def fixture(self, directory, *, enabled=True, provider="openai"):
         root = Path(directory)
         (root / "configs").mkdir(exist_ok=True)
@@ -307,6 +340,61 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(raw["parse_status"], "invalid")
             self.execute(plan, adapter, resume=True)
             transport.assert_called_once()
+
+    def test_cli_require_complete_marks_infrastructure_failure_without_extra_calls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.fixture(directory)
+            with patch("revocable_flow.runner.execute_plan", return_value={"complete": False}), \
+                    redirect_stdout(io.StringIO()):
+                result = main(["pilot-run", "--config", str(path), "--provider", "openai",
+                    "--condition", "post_update", "--scenario-limit", "3", "--run-id", "dummy-run",
+                    "--max-provider-requests", "3", "--max-attempts-per-request", "1",
+                    "--execute-live", "--require-complete"])
+            self.assertEqual(result, 1)
+
+    def test_explicit_one_attempt_sanity_never_retries_provider_failures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            plan = self.plan(self.fixture(directory), scenario_limit=3, condition="post_update",
+                             max_provider_requests=3, max_attempts_per_request=1)
+            adapter, transport = self.adapter()
+            transport.return_value = HTTPReply(429, None)
+            sleep = Mock()
+            summary = self.execute(plan, adapter, sleep=sleep)
+            self.assertEqual(transport.call_count, 3)
+            sleep.assert_not_called()
+            self.assertEqual(summary["attempted_provider_requests"], 3)
+            self.assertEqual(summary["completed"], 0)
+            self.assertEqual(len(list((plan.root / "raw").rglob("*.response.json"))), 3)
+            self.execute(plan, adapter, resume=True, sleep=sleep)
+            self.assertEqual(transport.call_count, 3)
+
+    def test_global_provider_cap_includes_retries_and_survives_resume(self):
+        with tempfile.TemporaryDirectory() as directory:
+            plan = self.plan(self.fixture(directory), scenario_limit=3, condition="post_update",
+                             max_provider_requests=3)
+            adapter, transport = self.adapter()
+            transport.return_value = HTTPReply(503, None)
+            summary = self.execute(plan, adapter, sleep=Mock())
+            self.assertEqual(transport.call_count, 3)
+            self.assertEqual(summary["attempted_provider_requests"], 3)
+            self.execute(plan, adapter, resume=True, sleep=Mock())
+            self.assertEqual(transport.call_count, 3)
+            self.assertFalse(summary["complete"])
+
+    def test_request_limits_are_frozen_in_manifest_and_reject_invalid_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.fixture(directory)
+            for kwargs in ({"max_provider_requests": 2}, {"max_provider_requests": True},
+                           {"max_attempts_per_request": 0}, {"max_attempts_per_request": 4},
+                           {"max_attempts_per_request": True}):
+                with self.subTest(kwargs=kwargs), self.assertRaises(ValidationError):
+                    self.plan(config, scenario_limit=3, condition="post_update", **kwargs)
+            ordinary = self.plan(config, scenario_limit=3, condition="post_update")
+            bounded = self.plan(config, scenario_limit=3, condition="post_update",
+                                max_provider_requests=3, max_attempts_per_request=1)
+            self.assertNotEqual(ordinary.manifest["manifest_hash"], bounded.manifest["manifest_hash"])
+            self.assertEqual(bounded.manifest["execution_limits"],
+                             {"max_provider_requests": 3, "max_attempts_per_request": 1})
 
     def test_retry_failure_preservation_and_frozen_backoff(self):
         with tempfile.TemporaryDirectory() as directory:

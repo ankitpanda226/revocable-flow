@@ -1,0 +1,86 @@
+{
+  "name": "Gemini sanity",
+  "on": {
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "concurrency": {
+    "group": "gemini-sanity",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "sanity": {
+      "if": "github.ref == 'refs/heads/main'",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 15,
+      "env": {
+        "RUN_ID": "gh-gemini-${{ github.run_id }}-${{ github.run_attempt }}",
+        "PYTHONPATH": "src"
+      },
+      "steps": [
+        {
+          "name": "Check out committed repository",
+          "uses": "actions/checkout@v4",
+          "with": {
+            "fetch-depth": 0,
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Set up Python 3.12",
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Install project",
+          "run": "python -m pip install ."
+        },
+        {
+          "name": "Run offline tests and benchmark validation",
+          "run": "python -m unittest discover -s tests -v\npython -m revocable_flow.cli validate data/pilot/scenarios.jsonl --pilot"
+        },
+        {
+          "name": "Validate exact Gemini sanity plan",
+          "id": "preflight",
+          "env": {
+            "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}"
+          },
+          "run": "python .github/scripts/gemini_sanity_preflight.py"
+        },
+        {
+          "name": "Run exactly three bounded Gemini requests",
+          "id": "sanity",
+          "env": {
+            "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}"
+          },
+          "run": "python -m revocable_flow.cli pilot-run \\\n  --provider google \\\n  --model gemini-3.8-flash \\\n  --condition post_update \\\n  --scenario-limit 3 \\\n  --run-id \"$RUN_ID\" \\\n  --max-provider-requests 3 \\\n  --max-attempts-per-request 1 \\\n  --execute-live --require-complete"
+        },
+        {
+          "name": "Inspect and stage safe artifacts",
+          "id": "artifacts",
+          "if": "${{ always() && steps.preflight.outcome == 'success' && steps.sanity.outcome != 'skipped' }}",
+          "env": {
+            "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}",
+            "GITHUB_TOKEN": "${{ github.token }}"
+          },
+          "run": "python -m revocable_flow.artifact_safety --run-id \"$RUN_ID\" --destination \"$RUNNER_TEMP/gemini-sanity-results\""
+        },
+        {
+          "name": "Upload inspected experiment artifacts",
+          "if": "${{ always() && steps.artifacts.outputs.safe == 'true' }}",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "gemini-sanity-results",
+            "path": "${{ runner.temp }}/gemini-sanity-results/",
+            "if-no-files-found": "error",
+            "retention-days": 30
+          }
+        }
+      ]
+    }
+  }
+}

@@ -90,3 +90,7 @@ PYTHONPATH=src python -m revocable_flow.cli pilot-run --provider openai --scenar
 ```
 
 Dry-run makes zero network calls and writes no results by default: 40 scenarios, 2 conditions, 3 configured families, **3 enabled models and 240 intended requests**. Omitting both `--dry-run` and `--execute-live` fails. Live calls require verified compatible models, environment credentials, clean committed code, a unique run ID and explicit approval. No live model request or sanity experiment has been run.
+
+## Manual GitHub sanity run
+
+The [Gemini sanity workflow](.github/workflows/gemini-sanity.yml) is manually triggered on main and uses the existing runner for three Google post-update scenarios. It enforces a three-request cap and one attempt per case, checks the frozen benchmark before calls, and uploads only inspected artifacts as `gemini-sanity-results`. See [launch and artifact instructions](docs/github_actions_sanity.md). Adding this workflow does not execute it; no model API call was made from Codex during this change.

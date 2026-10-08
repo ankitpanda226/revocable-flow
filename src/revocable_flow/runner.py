@@ -89,7 +89,8 @@ def _write_or_match(root, relative, value):
 
 
 def plan_run(config_path, *, run_id="dry-preview", provider=None, model=None,
-             scenario_limit=None, condition=None) -> RunPlan:
+             scenario_limit=None, condition=None, max_provider_requests=None,
+             max_attempts_per_request=None) -> RunPlan:
     if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", run_id):
         raise ValidationError("run_id must be 1–64 safe letters/digits/underscore/hyphen")
     config_path = Path(config_path)
@@ -153,6 +154,15 @@ def plan_run(config_path, *, run_id="dry-preview", provider=None, model=None,
                                  "execution_index": index, "condition": c, "provider": entry["provider"],
                                  "model": entry["model_id"], "model_index": model_index,
                                  "parameters": parameters.copy(), "prompt_hash": prompt["prompt_hash"]})
+    limits = {}
+    if max_provider_requests is not None:
+        if type(max_provider_requests) is not int or max_provider_requests < len(requests) or max_provider_requests < 1:
+            raise ValidationError("provider request cap must cover the intended requests")
+        limits["max_provider_requests"] = max_provider_requests
+    if max_attempts_per_request is not None:
+        if type(max_attempts_per_request) is not int or not 1 <= max_attempts_per_request <= config["retry"]["max_attempts"]:
+            raise ValidationError("attempt limit must be between 1 and the frozen infrastructure retry limit")
+        limits["max_attempts_per_request"] = max_attempts_per_request
     git = _git(config_path)
     manifest = {"run_id": run_id, "benchmark": config["benchmark"], "commit": git["commit"],
                 "git_dirty": git["dirty"], "python_version": platform.python_version(),
@@ -169,6 +179,8 @@ def plan_run(config_path, *, run_id="dry-preview", provider=None, model=None,
                 "scenario_count": len(scenarios), "provider_checks": provider_checks,
                 "primary_complete_design": len(scenarios) == full_count and conditions == config["conditions"],
                 "prompt_catalog": catalog, "requests": requests}
+    if limits:
+        manifest["execution_limits"] = limits
     assert_no_credentials(canonical_json(manifest))
     manifest["manifest_hash"] = _digest(manifest)
     benchmark_path = config_path.parent / config["benchmark"]["path"]
@@ -260,6 +272,11 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
     active = {m["provider"]: m for m in plan.manifest["model_matrix"] if m["status"] in {"enabled", "verified"}}
     adapters = adapters if adapters is not None else {p: PROVIDER_CLASSES[p]() for p in used}
     catalog = {(p["execution_index"], p["condition"]): p for p in plan.manifest["prompt_catalog"]}
+    limits = plan.manifest.get("execution_limits", {})
+    request_cap = limits.get("max_provider_requests")
+    attempt_limit = limits.get("max_attempts_per_request", plan.config["retry"]["max_attempts"])
+    # Count prior exclusive claims, including uncertain outcomes, against a resumed budget.
+    attempted = len(list((plan.root / f"raw/{run_id}").rglob("*.started.json")))
     completed, failures, ambiguous = [], [], []
     for request in plan.manifest["requests"]:
         index, condition, provider = request["execution_index"], request["condition"], request["provider"]
@@ -269,7 +286,7 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
         entry = active[provider]
         previous = None
         terminal = None
-        for attempt in range(1, plan.config["retry"]["max_attempts"] + 1):
+        for attempt in range(1, attempt_limit + 1):
             started_path = f"{prefix}/attempt-{attempt:02d}.started.json"
             response_path = f"{prefix}/attempt-{attempt:02d}.response.json"
             if _safe_path(plan.root, response_path).exists():
@@ -287,6 +304,8 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
             if _safe_path(plan.root, started_path).exists():
                 ambiguous.append(request["request_key"])
                 break  # Unknown outcome: no automatic duplicate or retry.
+            if request_cap is not None and attempted >= request_cap:
+                break
             if previous:
                 delay = plan.config["retry"]["backoff_seconds"][attempt-2]
                 retry_after = previous["provider_error"]["retry_after_seconds"] or 0
@@ -298,6 +317,7 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
             except FileExistsError:
                 ambiguous.append(request["request_key"])
                 break
+            attempted += 1
             response = adapters[provider].generate(prompt["messages"], model=request["model"],
                 parameters=request["parameters"], supported_parameters={k for k, v in entry["parameter_support"].items()
                 if v == "supported"}, execute_live=True)
@@ -350,6 +370,9 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
     summary = {"manifest_hash": plan.manifest["manifest_hash"], "planned": len(plan.manifest["requests"]),
                "completed": len(completed), "infrastructure_missing": failures, "ambiguous_attempts": ambiguous,
                "complete": not failures, "primary_complete_design": plan.manifest["primary_complete_design"]}
+    if limits:
+        summary["attempted_provider_requests"] = attempted
+        summary["execution_limits"] = limits
     if not failures and plan.manifest["primary_complete_design"]:
         summary["metrics_by_model"] = {p: summarize_scores(plan.scenarios, [s for r, s in completed if r["provider"] == p])
                                        for p in sorted(used)}

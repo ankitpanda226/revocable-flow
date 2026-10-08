@@ -22,12 +22,15 @@ def main(argv=None) -> int:
     pilot.add_argument("--provider", choices=("openai", "google", "anthropic"))
     pilot.add_argument("--model")
     pilot.add_argument("--scenario-limit", type=int)
+    pilot.add_argument("--max-provider-requests", type=int, help="hard cap including infrastructure retry attempts")
+    pilot.add_argument("--max-attempts-per-request", type=int, help="explicit lower infrastructure retry limit")
     pilot.add_argument("--condition", choices=("pre_update", "post_update"))
     gate = pilot.add_mutually_exclusive_group(required=True)
     gate.add_argument("--dry-run", action="store_true")
     gate.add_argument("--execute-live", action="store_true")
     pilot.add_argument("--run-id")
     pilot.add_argument("--resume", action="store_true")
+    pilot.add_argument("--require-complete", action="store_true", help="exit unsuccessfully if live collection is incomplete")
     pilot.add_argument("--manifest-preview", action="store_true")
     pilot.add_argument("--write-manifest", action="store_true")
     args = parser.parse_args(argv)
@@ -39,7 +42,9 @@ def main(argv=None) -> int:
             if args.execute_live and (args.manifest_preview or args.write_manifest):
                 raise ValueError("manifest preview/write options are dry-run only")
             plan = plan_run(args.config, run_id=args.run_id or "dry-preview", provider=args.provider,
-                            model=args.model, scenario_limit=args.scenario_limit, condition=args.condition)
+                            model=args.model, scenario_limit=args.scenario_limit, condition=args.condition,
+                            max_provider_requests=args.max_provider_requests,
+                            max_attempts_per_request=args.max_attempts_per_request)
             if args.dry_run:
                 report = preview(plan)
                 if args.write_manifest:
@@ -53,6 +58,8 @@ def main(argv=None) -> int:
                 print(json.dumps({"execution_preview": execution_preview}, indent=2), flush=True)
                 report = execute_plan(plan, execute_live=args.execute_live, resume=args.resume)
             print(json.dumps(report, indent=2))
+            if args.execute_live and args.require_complete and not report["complete"]:
+                return 1
         elif args.command == "validate":
             scenarios = load_scenarios(args.benchmark, require_pilot=args.pilot)
             print(json.dumps({"count": len(scenarios), "by_transition_type":
