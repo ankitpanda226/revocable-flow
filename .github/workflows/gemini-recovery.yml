@@ -1,0 +1,121 @@
+{
+  "name": "Gemini two-request recovery",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "source_run_id": {
+          "description": "Existing failed Gemini sanity GitHub run ID",
+          "required": true,
+          "type": "string"
+        },
+        "source_attempt": {
+          "description": "Source run attempt number",
+          "required": true,
+          "default": "1",
+          "type": "string"
+        },
+        "budget_review_confirmed": {
+          "description": "I reviewed spending against the $4 total budget and approve two new calls; source not already recovered",
+          "required": true,
+          "default": false,
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "gemini-recovery-${{ inputs.source_run_id }}",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "recovery": {
+      "if": "github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.budget_review_confirmed",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 15,
+      "env": {
+        "PYTHONPATH": "src",
+        "SOURCE_GITHUB_RUN": "${{ inputs.source_run_id }}",
+        "SOURCE_ATTEMPT": "${{ inputs.source_attempt }}",
+        "SOURCE_RUN_ID": "gh-gemini-${{ inputs.source_run_id }}-${{ inputs.source_attempt }}",
+        "RECOVERY_ID": "gh-gemini-recovery-${{ github.run_id }}-1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "fetch-depth": 0,
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Install project",
+          "run": "python -m pip install ."
+        },
+        {
+          "name": "Offline tests and frozen benchmark validation",
+          "run": "python -m unittest discover -s tests -v\npython -m revocable_flow.cli validate data/pilot/scenarios.jsonl --pilot"
+        },
+        {
+          "name": "Verify source workflow identity",
+          "id": "source",
+          "uses": "actions/github-script@v7",
+          "with": {
+            "script": "const runId = process.env.SOURCE_GITHUB_RUN;\nconst attempt = process.env.SOURCE_ATTEMPT;\nif (!/^[1-9][0-9]*$/.test(runId) || !/^[1-9][0-9]*$/.test(attempt)) throw new Error('Invalid source identity');\nconst { data: run } = await github.rest.actions.getWorkflowRunAttempt({owner: context.repo.owner, repo: context.repo.repo, run_id: Number(runId), attempt_number: Number(attempt)});\nif (run.path !== '.github/workflows/gemini-sanity.yml' || run.event !== 'workflow_dispatch' || run.head_branch !== 'main' || run.conclusion !== 'failure' || run.status !== 'completed' || run.run_attempt !== Number(attempt)) throw new Error('Not the specified failed manual sanity run');\nif (!/^[0-9a-f]{40}$/.test(run.head_sha)) throw new Error('Invalid source commit');\ncore.setOutput('commit', run.head_sha);"
+          }
+        },
+        {
+          "name": "Download existing source artifact only",
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "name": "gemini-sanity-results",
+            "path": "${{ runner.temp }}/recovery-input",
+            "github-token": "${{ github.token }}",
+            "repository": "${{ github.repository }}",
+            "run-id": "${{ inputs.source_run_id }}"
+          }
+        },
+        {
+          "name": "Validate source and run only two linked recovery requests",
+          "id": "recover",
+          "env": {
+            "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}",
+            "GITHUB_TOKEN": "${{ github.token }}",
+            "SOURCE_COMMIT": "${{ steps.source.outputs.commit }}"
+          },
+          "run": "python -m revocable_flow.recovery --source \"$RUNNER_TEMP/recovery-input\" --source-run-id \"$SOURCE_RUN_ID\" --source-commit \"$SOURCE_COMMIT\" --run-id \"$RECOVERY_ID\" --destination \"$RUNNER_TEMP/recovery-preserved\" --execute-live"
+        },
+        {
+          "name": "Inspect source preservation and safe recovery artifacts",
+          "id": "artifacts",
+          "if": "${{ always() && steps.recover.outcome != 'skipped' && steps.recover.outcome != '' }}",
+          "env": {
+            "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}",
+            "GITHUB_TOKEN": "${{ github.token }}"
+          },
+          "run": "python .github/scripts/stage_gemini_recovery.py"
+        },
+        {
+          "name": "Upload inspected original and recovery artifacts",
+          "if": "${{ always() && steps.artifacts.outputs.safe == 'true' }}",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "gemini-recovery-results",
+            "path": "${{ runner.temp }}/recovery-upload/",
+            "if-no-files-found": "error",
+            "retention-days": 30
+          }
+        }
+      ]
+    }
+  }
+}

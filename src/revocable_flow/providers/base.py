@@ -64,11 +64,11 @@ class TransportFailure(Exception):
 Transport = Callable[[str, dict, dict], HTTPReply]
 
 
-def http_transport(url: str, headers: dict, payload: dict) -> HTTPReply:
+def http_transport(url: str, headers: dict, payload: dict, *, open_request=None) -> HTTPReply:
     """Only invoked after a live gate. Never surface upstream bodies/errors/keys."""
     request = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with (open_request or urllib.request.urlopen)(request, timeout=60) as response:
             return HTTPReply(response.status, json.loads(response.read()), dict(response.headers))
     except urllib.error.HTTPError as exc:
         return HTTPReply(exc.code, None, dict(exc.headers))
