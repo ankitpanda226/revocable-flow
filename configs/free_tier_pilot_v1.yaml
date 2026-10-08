@@ -46,7 +46,7 @@
       "verification_date": "2026-10-08",
       "documentation_source": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite",
       "immutable_snapshot": false,
-      "notes": "Researcher reports successful account-specific models.list with generateContent support on 2026-10-08 (report receipt date; diagnostic date/run URL pending). Saved artifact, model-specific generation parameter evidence and project Free-tier evidence remain unavailable. Disabled; parameter support unresolved. Stable model label is not an immutable snapshot. No Gemini 3.8 Flash exception applied.",
+      "notes": "Account-specific availability reported verified 2026-10-08 UTC in GitHub Actions run 37854150199. Researcher attests Default Gemini Project is Free tier with paid billing disabled. Raw diagnostic artifact, binding to GOOGLE_API_KEY project, model-specific parameter/structured-output evidence and cumulative spending remain unresolved. Disabled. No Gemini 3.8 Flash parameter exception applied; stable label is not an immutable snapshot.",
       "parameter_support": {
         "temperature": "unresolved",
         "top_p": "unresolved",

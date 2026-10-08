@@ -10,7 +10,7 @@ The researcher reports that the manually dispatched account diagnostic succeeded
 {"requested_model":"models/gemini-3.5-flash-lite","status":"success","target_listed":true,"target_supports_generateContent":true}
 ```
 
-Report received 2026-10-08. The actual diagnostic verification date, GitHub Actions run URL and downloaded safe diagnostic artifact have not been supplied. They remain null in the policy; the receipt date is not substituted for the observation date. Account access and advertised generateContent support are recorded as researcher-reported successful verification, not independently inspected artifact evidence.
+Verification date supplied by the researcher: 2026-10-08 UTC. Run: https://github.com/ankitpanda226/revocable-flow/actions/runs/37854150199. The researcher reports exactly one models-list request and zero generation requests. The safe raw diagnostic artifact has not been supplied and remains unset; no artifact contents are reconstructed from this report. Account access and advertised generateContent support remain researcher-reported successful verification.
 
 The read-only availability workflow is published at commit 712193f0f48d4154e9fd087ae35a6f869f4e6438. It does not enable this pilot. Listing proves advertised access at that observation, not quota, price, account tier or generation health.
 
@@ -19,7 +19,7 @@ The researcher independently verified stable-model documentation, structured out
 - https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
 - https://ai.google.dev/gemini-api/docs/pricing
 
-Codex could not retrieve those pages or the GenerationConfig reference during this preparation (network URLError). These are researcher-supplied documentation claims. No project-specific Free-tier evidence or actual cumulative spend is available. Free pricing documentation does not establish this project's tier.
+Codex could not retrieve those pages or the GenerationConfig reference during this preparation (network URLError). These are researcher-supplied documentation claims. The researcher now attests that Default Gemini Project displays Free tier and Set up billing, with paid billing disabled. This attestation is saved separately with a byte hash. No screenshot/billing export was inspected; the configured secret's project binding and actual cumulative spend remain unverified.
 
 **All generation remains disabled:** models=[], model status=disabled, execution_enabled=false, parameter_support_verified=false, account_free_tier_eligibility_verified=false. The live implementation review gate remains set. Preparation and offline validation do not approve generation.
 
@@ -56,10 +56,12 @@ Total research budget is $4 across all providers. Actual cumulative expenditure 
 
 Each phase requires explicit review of project Free tier, current model pricing and quotas, all-provider cumulative spending, and prior run history. Supply reviewed_total_spend_usd as a finite actual total below $4 and budget_review_confirmed=true. The manifest records this assertion and price_guarantee=false, estimated_stage_cost_usd=null. Use provider billing controls where available. If spend, account tier or effective parameters cannot be verified, leave execution disabled.
 
-**Next action is evidence review, not a generation launch:** supply the successful availability run URL/date and safe artifact; preserve candidate parameter documentation; verify the key's project is on the Free tier; reconcile actual cumulative spending across providers. Resolve those gates in a separately reviewed update before approving generation.
+**Next action is evidence review, not a generation launch:** supply the safe diagnostic artifact from run 37854150199; preserve candidate-specific parameter documentation; confirm GOOGLE_API_KEY belongs to the attested Free-tier project; review current quotas and reconcile actual cumulative spending across providers. Run/date are now recorded. See docs/reports/flash_lite_parameter_compatibility_audit.md for the offline compatibility audit. Resolve those gates in a separately reviewed update before approving generation.
 
 Once evidence is verified, configuration is enabled and generation is explicitly approved, the owner could open Actions → Gemini Flash-Lite staged pilot, choose Run workflow on main, select exactly one phase, enter the immediate prior run ID (empty only for connectivity), and supply the fresh budget review. Do not perform these steps now. No workflow or generation request was triggered during this preparation.
 
 ## Offline validation and research limits
 
 Tests exercise disabled gates, candidate identity, parameter/tier evidence hashes, budget refusal, all 80 unique mock requests, immutable ancestry, no success replay, quota circuit stops, error preservation, workflow-history guard and safe upload. They establish implementation behavior, not provider compatibility or research performance. Original parser/scorer and complete-paired metric semantics remain authoritative. No live aggregate accuracy, SALR, significance or research conclusions are reported. The aggregate assembler/bootstrap extension remains outside this collection implementation.
+
+The API-JSON capability flag remains false, but is not a readiness requirement because responseMimeType/schema settings are not sent in the frozen pilot. Generic API specifications, unresolved exact-model acceptance and separately approved one-call probe limitations are detailed in docs/reports/flash_lite_parameter_compatibility_audit.md. Completed read-only verification changes may be committed locally; no workflow trigger or generation approval is implied.

@@ -7,7 +7,7 @@
   "free_tier_verified": true,
   "available_to_key_verified": true,
   "generate_content_verified": true,
-  "json_output_verified": true,
+  "json_output_verified": false,
   "parameter_support_verified": false,
   "evidence": {
     "diagnostic_file": null,
@@ -17,9 +17,9 @@
     "pricing_url": "https://ai.google.dev/gemini-api/docs/pricing",
     "models_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite",
     "structured_output_url": "https://ai.google.dev/gemini-api/docs/structured-output",
-    "status": "Account listing and generateContent support reported successful by researcher; run reference, saved artifact, candidate parameter evidence and project Free-tier evidence pending.",
+    "status": "Diagnostic run/date and project Free tier supplied by researcher. Raw diagnostic artifact, project-to-secret binding, exact-model parameter evidence and reconciled spending remain pending.",
     "verification_basis": "User reports independent verification of official documentation; assistant could not retrieve sources.",
-    "standard_text_free_tier": "Free of charge per researcher-supplied pricing verification; account eligibility not established.",
+    "standard_text_free_tier": "Free standard text pricing and Free-tier project status attested by researcher; binding to configured secret and current quotas still require review.",
     "stable_model_documented": true,
     "immutable_snapshot": false,
     "availability_verification": {
@@ -28,23 +28,31 @@
         "requested_model": "models/gemini-3.5-flash-lite",
         "status": "success",
         "target_listed": true,
-        "target_supports_generateContent": true
+        "target_supports_generateContent": true,
+        "requests_attempted": 1,
+        "generation_requests": 0
       },
       "report_received_date": "2026-10-08",
-      "verification_date": null,
-      "github_actions_run_url": null
+      "verification_date": "2026-10-08",
+      "github_actions_run_url": "https://github.com/ankitpanda226/revocable-flow/actions/runs/37854150199",
+      "verification_date_timezone": "UTC"
     },
     "parameter_support_file": null,
     "parameter_support_sha256": null,
-    "account_tier_file": null,
-    "account_tier_sha256": null
+    "account_tier_file": "docs/evidence/flash_lite_free_tier_attestation_2026-10-08.json",
+    "account_tier_sha256": "82405ec1cdf8f240f796bb9bfdd8383a030d00ee512fca9c346ca5ac8142135a",
+    "diagnostic_preservation_workflow": ".github/workflows/preserve-flash-lite-diagnostic.yml",
+    "diagnostic_preservation_status": "prepared offline; unpublished and not triggered"
   },
   "budget": {
     "maximum_total_usd": 4,
     "verified_spend_usd": null,
     "remaining_usd": null,
     "account_free_tier_eligibility_verified": false,
-    "review_required_before_each_phase": true
+    "review_required_before_each_phase": true,
+    "account_free_tier_status_reported": true,
+    "quota_review_status": "unresolved: current project-specific quota/usage/reset evidence not supplied",
+    "spending_evidence_status": "unresolved: cumulative all-provider expenditure not independently reconciled"
   },
   "planned_requests": 80,
   "phases": {

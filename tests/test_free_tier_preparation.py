@@ -11,6 +11,7 @@ from unittest.mock import patch
 from revocable_flow.protocol import build_messages, load_protocol_config, canonical_json
 from revocable_flow.runner import plan_run
 from revocable_flow.schema import ValidationError
+from revocable_flow.providers import GoogleProvider
 
 ROOT=Path(__file__).resolve().parents[1]
 CONFIG=ROOT/'configs/free_tier_pilot_v1.yaml'
@@ -21,6 +22,20 @@ preflight=importlib.util.module_from_spec(spec);spec.loader.exec_module(prefligh
 
 
 class FreeTierPreparationTests(unittest.TestCase):
+    def test_unverified_required_parameters_never_reach_transport(self):
+        from unittest.mock import Mock
+        transport=Mock(side_effect=AssertionError('provider call forbidden'))
+        config=load_protocol_config(CONFIG)
+        with patch.dict('os.environ',{},clear=True):
+            response=GoogleProvider(transport=transport).generate(
+                [{'role':'system','content':'SYN offline fixture'},
+                 {'role':'user','content':'SYN offline fixture'}],
+                model='gemini-3.5-flash-lite',parameters={k:config['execution'][k]
+                    for k in ('temperature','top_p','max_output_tokens','seed')},
+                supported_parameters=set(),execute_live=True)
+        self.assertEqual(response.error.category,'unsupported_required_parameters')
+        transport.assert_not_called()
+
     def test_model_and_free_tier_remain_unresolved_not_invented(self):
         config=load_protocol_config(CONFIG); policy=json.loads(POLICY.read_text())
         self.assertEqual(config['models'],[])
@@ -35,8 +50,14 @@ class FreeTierPreparationTests(unittest.TestCase):
         observation=policy['evidence']['availability_verification']
         self.assertEqual(observation['reported_result']['requested_model'],'models/gemini-3.5-flash-lite')
         self.assertEqual(observation['report_received_date'],'2026-10-08')
-        self.assertIsNone(observation['github_actions_run_url'])
-        self.assertIsNone(observation['verification_date'])
+        self.assertEqual(observation['github_actions_run_url'],'https://github.com/ankitpanda226/revocable-flow/actions/runs/37854150199')
+        self.assertEqual(observation['verification_date'],'2026-10-08')
+        self.assertEqual(observation['verification_date_timezone'],'UTC')
+        self.assertFalse(policy['json_output_verified'])
+        tier_path=ROOT/policy['evidence']['account_tier_file']
+        self.assertEqual(sha256(tier_path.read_bytes()).hexdigest(),policy['evidence']['account_tier_sha256'])
+        self.assertEqual(json.loads(tier_path.read_text())['tier'],'Free')
+        self.assertFalse(json.loads(tier_path.read_text())['secret_project_binding_confirmed'])
         self.assertFalse(policy['parameter_support_verified'])
         self.assertEqual(policy['budget']['maximum_total_usd'],4)
         self.assertIsNone(policy['budget']['verified_spend_usd'])

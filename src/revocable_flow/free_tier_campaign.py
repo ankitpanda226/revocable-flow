@@ -29,8 +29,10 @@ def readiness(policy_path=POLICY, config_path=CONFIG):
         raise ValidationError('phase policy mismatch')
     if policy['model_id']!=MODEL or policy['provider']!='google' or policy['budget']['maximum_total_usd']!=4:
         raise ValidationError('candidate/budget identity mismatch')
+    # API-enforced JSON is not part of the frozen request. Do not gate a
+    # prompt/parser-only condition on an unused responseMimeType capability.
     for k in ('execution_enabled','free_tier_verified','available_to_key_verified','generate_content_verified',
-              'json_output_verified','parameter_support_verified'):
+              'parameter_support_verified'):
         if policy.get(k) is not True:
             raise ValidationError('candidate evidence unresolved; execution disabled')
     if policy['budget']['account_free_tier_eligibility_verified'] is not True:
@@ -61,7 +63,8 @@ def readiness(policy_path=POLICY, config_path=CONFIG):
         raise ValidationError('candidate-specific parameter evidence mismatch')
     tier=json.loads(Path(policy['evidence']['account_tier_file']).read_text())
     if (tier.get('tier')!='Free' or tier.get('model_id')!=MODEL or not tier.get('project_reference')
-            or not tier.get('verification_date') or not tier.get('verification_basis')):
+            or not tier.get('verification_date') or not tier.get('verification_basis')
+            or tier.get('secret_project_binding_confirmed') is not True):
         raise ValidationError('project-specific Free-tier evidence missing')
     return policy
 

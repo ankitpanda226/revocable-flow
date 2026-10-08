@@ -1,0 +1,10 @@
+{
+  "model_id": "gemini-3.5-flash-lite",
+  "tier": "Free",
+  "project_reference": "Default Gemini Project",
+  "verification_date": "2026-10-08",
+  "verification_basis": "Researcher reports Google AI Studio displays Free tier and Set up billing; paid billing has not been enabled. No screenshot or provider billing export was inspected.",
+  "source": "Researcher attestation supplied in conversation",
+  "secret_project_binding_confirmed": false,
+  "paid_billing_enabled": false
+}

@@ -21,6 +21,15 @@ GIT={'commit':'1'*40,'dirty':False}
 
 
 class FreeTierCampaignTests(unittest.TestCase):
+    def test_unused_api_json_capability_is_not_a_live_readiness_requirement(self):
+        from revocable_flow.free_tier_campaign import readiness
+        with tempfile.TemporaryDirectory() as directory:
+            cfg,pol=self.fixture(Path(directory))
+            policy=json.loads(pol.read_text());policy['json_output_verified']=False
+            pol.write_text(json.dumps(policy))
+            with patch('urllib.request.urlopen',side_effect=AssertionError('network forbidden')):
+                self.assertFalse(readiness(pol,cfg)['json_output_verified'])
+
     def fixture(self,root):
         (root/'configs').mkdir()
         c=load_protocol_config(CONFIG);c['benchmark']['path']=str(ROOT/'data/pilot/scenarios.jsonl')
@@ -37,7 +46,7 @@ class FreeTierCampaignTests(unittest.TestCase):
         evidence=root/'SYN-evidence.txt';evidence.write_text('SYN synthetic offline evidence, not provider documentation')
         diagnostic=root/'SYN-diagnostic.json';diagnostic.write_text(json.dumps({'status':'success','requested_model':'models/'+MODEL,'target_listed':True,'target_supports_generateContent':True,'models':[{'name':'models/'+MODEL,'supported_methods':['generateContent']}]}))
         parameters=root/'SYN-parameters.json';parameters.write_text(json.dumps({'model_id':MODEL,'parameter_support':model['parameter_support'],'documentation_source':'SYN-mock-only','verification_date':'2026-10-08'}))
-        tier=root/'SYN-tier.json';tier.write_text(json.dumps({'model_id':MODEL,'tier':'Free','project_reference':'SYN-fictional-project','verification_date':'2026-10-08','verification_basis':'SYN-mock-only'}))
+        tier=root/'SYN-tier.json';tier.write_text(json.dumps({'model_id':MODEL,'tier':'Free','project_reference':'SYN-fictional-project','verification_date':'2026-10-08','verification_basis':'SYN-mock-only','secret_project_binding_confirmed':True}))
         for file_key,hash_key in (('diagnostic_file','diagnostic_sha256'),('official_pricing_file','official_pricing_sha256')):
             source=diagnostic if file_key=='diagnostic_file' else evidence
             policy['evidence'][file_key]=str(source);policy['evidence'][hash_key]=sha256(source.read_bytes()).hexdigest()
@@ -138,7 +147,8 @@ class FreeTierCampaignTests(unittest.TestCase):
         from hashlib import sha256
         for evidence_key,field,bad in (('parameter_support','model_id','SYN-other-model'),
                                      ('parameter_support','parameter_support',{'seed':'unsupported'}),
-                                     ('account_tier','tier','Paid'),('account_tier','project_reference',None)):
+                                     ('account_tier','tier','Paid'),('account_tier','project_reference',None),
+                                     ('account_tier','secret_project_binding_confirmed',False)):
             with self.subTest(evidence=evidence_key,field=field),tempfile.TemporaryDirectory() as directory:
                 cfg,pol=self.fixture(Path(directory));p=json.loads(pol.read_text())
                 source=Path(p['evidence'][evidence_key+'_file']);value=json.loads(source.read_text())
