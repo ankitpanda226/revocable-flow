@@ -278,7 +278,9 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
     # Count prior exclusive claims, including uncertain outcomes, against a resumed budget.
     attempted = len(list((plan.root / f"raw/{run_id}").rglob("*.started.json")))
     completed, failures, ambiguous = [], [], []
+    visited, consecutive_503, stop_reason = set(), 0, None
     for request in plan.manifest["requests"]:
+        visited.add(request["request_key"])
         index, condition, provider = request["execution_index"], request["condition"], request["provider"]
         scenario = plan.scenarios[index-1]
         prefix = f"raw/{run_id}/{request['request_key']}"
@@ -355,7 +357,19 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
             break
         if terminal is None:
             failures.append(request["request_key"])
+            status = (previous or {}).get("provider_error", {}).get("http_status")
+            consecutive_503 = consecutive_503 + 1 if status == 503 else 0
+            if status in limits.get("stop_on_http_statuses", []):
+                stop_reason = f"http_{status}"
+                break
+            if consecutive_503 >= limits.get("stop_after_consecutive_http_503", float("inf")):
+                stop_reason = "repeated_http_503"
+                break
+            if ambiguous and limits.get("stop_on_ambiguous"):
+                stop_reason = "ambiguous_attempt"
+                break
             continue
+        consecutive_503 = 0
         parsed = parse_output(terminal["raw_output"], scenario)
         score = score_output(scenario, condition, parsed)
         parsed_record = {"request_key": request["request_key"], "manifest_hash": plan.manifest["manifest_hash"],
@@ -373,7 +387,11 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
     if limits:
         summary["attempted_provider_requests"] = attempted
         summary["execution_limits"] = limits
-    if not failures and plan.manifest["primary_complete_design"]:
+    if "stop_on_http_statuses" in limits:
+        unattempted = [r["request_key"] for r in plan.manifest["requests"] if r["request_key"] not in visited]
+        summary.update(unattempted_requests=unattempted, provider_stop_reason=stop_reason,
+                       complete=not failures and not unattempted)
+    if summary["complete"] and plan.manifest["primary_complete_design"]:
         summary["metrics_by_model"] = {p: summarize_scores(plan.scenarios, [s for r, s in completed if r["provider"] == p])
                                        for p in sorted(used)}
     _write_or_match(plan.root, f"summaries/{run_id}/completion-{_digest(summary)[:16]}.json", summary)

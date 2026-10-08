@@ -1,0 +1,62 @@
+{
+  "protocol_version": "1.0",
+  "benchmark": {
+    "name": "RevocableFlow Pilot",
+    "version": "0.2",
+    "hash": "17e4da22029b31b280fcf711bec9c88f261f01ee40dd45137a2ad2540ed4c80d",
+    "commit": "b7205ea9a88759b687c885e119e63feac3f35da6",
+    "path": "../data/pilot/scenarios.jsonl"
+  },
+  "execution": {
+    "seed": 20261007,
+    "repetitions": 1,
+    "temperature": 0,
+    "top_p": 1,
+    "max_output_tokens": 512
+  },
+  "models": [],
+  "conditions": [
+    "pre_update",
+    "post_update"
+  ],
+  "ablation": {
+    "enabled": false
+  },
+  "retry": {
+    "max_attempts": 3,
+    "backoff_seconds": [
+      2,
+      4
+    ]
+  },
+  "analysis": {
+    "bootstrap_seed": 20261007,
+    "bootstrap_samples": 10000,
+    "minimum_families_for_interval": 10
+  },
+  "artifacts": {
+    "root": "../results"
+  },
+  "model_matrix": [
+    {
+      "provider": "google",
+      "display_name": "Gemini 3.5 Flash-Lite",
+      "model_id": "gemini-3.5-flash-lite",
+      "status": "disabled",
+      "verification_date": "2026-10-08",
+      "documentation_source": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite",
+      "immutable_snapshot": false,
+      "notes": "Researcher reports successful account-specific models.list with generateContent support on 2026-10-08 (report receipt date; diagnostic date/run URL pending). Saved artifact, model-specific generation parameter evidence and project Free-tier evidence remain unavailable. Disabled; parameter support unresolved. Stable model label is not an immutable snapshot. No Gemini 3.8 Flash exception applied.",
+      "parameter_support": {
+        "temperature": "unresolved",
+        "top_p": "unresolved",
+        "max_output_tokens": "unresolved",
+        "seed": "unresolved"
+      }
+    }
+  ],
+  "pricing": {
+    "input_per_million": null,
+    "output_per_million": null
+  }
+}
