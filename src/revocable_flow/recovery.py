@@ -137,22 +137,35 @@ def main():
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--destination", required=True)
     parser.add_argument("--execute-live", action="store_true")
+    parser.add_argument("--from-recovery", action="store_true", help="validate first-recovery bundle and dispatch only original index 2")
     args = parser.parse_args()
     try:
         # Validate the narrowly allowlisted original archive before reading its evidence.
-        preserved = Path(args.destination) / "source"
-        stage_archive(args.source, args.source_run_id, preserved)
-        plan = prepare(preserved, args.source_run_id, args.source_commit, args.run_id)
-        print("Recovery preflight passed: indices 1 and 2 only; third response preserved; maximum 2 new requests.")
+        if args.from_recovery:
+            from .chained_recovery import prepare_chained, preserve_bundle
+            preserved = Path(args.destination)
+            preserve_bundle(args.source, args.source_run_id, preserved)
+            plan = prepare_chained(preserved, args.source_run_id, args.source_commit, args.run_id)
+            print("Chained recovery preflight passed: index 2 only; indices 1 and 3 preserved; maximum 1 new request.")
+        else:
+            preserved = Path(args.destination) / "source"
+            stage_archive(args.source, args.source_run_id, preserved)
+            plan = prepare(preserved, args.source_run_id, args.source_commit, args.run_id)
+            print("Recovery preflight passed: indices 1 and 2 only; third response preserved; maximum 2 new requests.")
         if not args.execute_live:
             return 0
         summary = execute_plan(plan, execute_live=True,
                                adapters={"google": GoogleProvider(transport=recovery_transport)})
-        _write(plan.root, f"summaries/{args.run_id}/dispatch-audit.json",
-               {"source_manifest_hash": plan.manifest["recovery"]["source_manifest_hash"],
+        audit = {"source_manifest_hash": plan.manifest["recovery"]["source_manifest_hash"],
                 "manifest_hash": plan.manifest["manifest_hash"], "maximum_new_requests": 2,
                 "new_requests_attempted": summary["attempted_provider_requests"],
-                "retry_indices": [1, 2], "preserved_index": 3})
+                "retry_indices": [1, 2], "preserved_index": 3}
+        if args.from_recovery:
+            audit.update(maximum_new_requests=1,retry_indices=[2],preserved_indices=[1,3],
+                         original_manifest_hash=plan.manifest["recovery"]["original_manifest_hash"],
+                         prior_trial_attempts=plan.manifest["recovery"]["prior_trial_attempts"],next_trial_attempt=3)
+            audit.pop("preserved_index")
+        _write(plan.root, f"summaries/{args.run_id}/dispatch-audit.json", audit)
         print(json.dumps(summary, indent=2))
         return 0 if summary["complete"] else 1
     except (ValueError, OSError, KeyError, TypeError):

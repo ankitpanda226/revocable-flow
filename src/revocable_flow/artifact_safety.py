@@ -37,7 +37,7 @@ def _inspect_json(value):
             _inspect_json(child)
 
 
-def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, recovery=False) -> int:
+def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, recovery=False, chained=False) -> int:
     if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", run_id):
         raise ValidationError("invalid archive run ID")
     root, destination = Path(root).absolute(), Path(destination).absolute()
@@ -52,21 +52,26 @@ def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, rec
     requests = manifest.get("requests", [])
     if not isinstance(requests, list) or any(not isinstance(r, dict) for r in requests):
         raise ValidationError("invalid archive request records")
-    count = 2 if recovery else 3
-    if recovery:
+    if recovery and chained:
+        raise ValidationError("select one archive mode")
+    count = 1 if chained else (2 if recovery else 3)
+    indices = {2} if chained else set(range(1, count + 1))
+    if recovery or chained:
         lineage = manifest.get("recovery", {})
-        if (lineage.get("retry_indices") != [1, 2] or lineage.get("preserved_index") != 3
-                or lineage.get("maximum_new_requests") != 2 or lineage.get("source_failure_status") != 503
+        preserved = lineage.get("preserved_indices") == [1, 3] if chained else lineage.get("preserved_index") == 3
+        if (lineage.get("retry_indices") != sorted(indices) or not preserved
+                or lineage.get("maximum_new_requests") != count or lineage.get("source_failure_status") != 503
                 or not re.fullmatch(r"[0-9a-f]{64}", lineage.get("source_manifest_hash", ""))):
             raise ValidationError("invalid recovery lineage")
     if (manifest.get("run_id") != run_id or manifest.get("expected_request_count") != count or len(requests) != count
             or manifest.get("execution_limits") != {"max_provider_requests": count, "max_attempts_per_request": 1}
             or any(r.get("provider") != "google" or r.get("model") != "gemini-3.8-flash"
                    or r.get("condition") != "post_update" for r in requests)
-            or {r.get("execution_index") for r in requests} != set(range(1, count + 1))):
+            or {r.get("execution_index") for r in requests} != indices):
         raise ValidationError("archive is not the approved bounded Gemini plan")
     request_keys = [r.get("request_key", "") for r in requests]
-    if any(not re.fullmatch(r"model-0[1-3]/post_update/00[1-" + str(count) + "]", k) for k in request_keys) or len(set(request_keys)) != count:
+    index_pattern = "(?:" + "|".join(f"{i:03d}" for i in sorted(indices)) + ")"
+    if any(not re.fullmatch(r"model-0[1-3]/post_update/" + index_pattern, k) for k in request_keys) or len(set(request_keys)) != count:
         raise ValidationError("unexpected request artifact keys")
     selected = []
     # Select only this run, never the repository, home, runner environment or other runs.
@@ -82,7 +87,7 @@ def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, rec
         "manifests": re.compile(r"^" + re.escape(run_id) + r"\.json$"),
         "raw": re.compile(r"^(?:" + "|".join(re.escape(k) for k in request_keys) + r")/attempt-01\.(started|response)\.json$"),
         "parsed": re.compile(r"^(benchmark\.jsonl|benchmark_metadata\.json|analysis_index\.json|(?:" + "|".join(re.escape(k) for k in request_keys) + r")\.json)$"),
-        "summaries": re.compile(r"^(completion-[a-f0-9]{16}\.json" + (r"|dispatch-audit\.json" if recovery else "") + r")$"),
+        "summaries": re.compile(r"^(completion-[a-f0-9]{16}\.json" + (r"|dispatch-audit\.json" if recovery or chained else "") + r")$"),
     }
     for path in candidates:
         if path.is_symlink():
