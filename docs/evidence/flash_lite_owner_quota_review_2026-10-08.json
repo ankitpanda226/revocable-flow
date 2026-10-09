@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-08",
+  "source": "Project owner review of Google AI Studio and Spend page",
+  "project_reference": "Default Gemini Project",
+  "model_id": "gemini-3.5-flash-lite",
+  "tier": "Free",
+  "paid_billing_configured": false,
+  "rate_limits": {
+    "requests_per_minute": 15,
+    "tokens_per_minute": 250000,
+    "requests_per_day": 500
+  },
+  "displayed_peak_usage": 0,
+  "spend_page": "No billing configured",
+  "secret_previously_used_successfully": true,
+  "secret_project_binding_confirmed": false,
+  "all_provider_actual_spending_usd": null,
+  "maximum_research_budget_usd": 4,
+  "limitation": "Owner attestation, not independently retrieved billing/quota telemetry. Prior API success does not identify secret-owning project; zero displayed peak is not a spending ledger."
+}

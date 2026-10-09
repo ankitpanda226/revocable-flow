@@ -37,7 +37,7 @@ def _inspect_json(value):
             _inspect_json(child)
 
 
-def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, recovery=False, chained=False, pilot_phase=None) -> int:
+def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, recovery=False, chained=False, pilot_phase=None, compatibility=False) -> int:
     if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", run_id):
         raise ValidationError("invalid archive run ID")
     root, destination = Path(root).absolute(), Path(destination).absolute()
@@ -52,11 +52,21 @@ def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, rec
     requests = manifest.get("requests", [])
     if not isinstance(requests, list) or any(not isinstance(r, dict) for r in requests):
         raise ValidationError("invalid archive request records")
-    if sum((bool(recovery), bool(chained), pilot_phase is not None)) > 1:
+    if sum((bool(recovery), bool(chained), pilot_phase is not None, bool(compatibility))) > 1:
         raise ValidationError("select one archive mode")
     count = 1 if chained else (2 if recovery else 3)
     indices = {2} if chained else set(range(1, count + 1))
     condition, expected_model = "post_update", "gemini-3.8-flash"
+    if compatibility:
+        from .compatibility_probe import authorize, PARAMETERS
+        count,indices,expected_model=1,{1},'gemini-3.5-flash-lite'
+        if (manifest.get('experiment_kind')!='isolated_flash_lite_compatibility_v1'
+                or manifest.get('compatibility_probe',{}).get('exact_model_support')!='unverified_under_test'):
+            raise ValidationError('invalid isolated compatibility probe')
+        authorize(manifest['compatibility_probe'].get('owner_approvals'))
+        if (manifest.get('generation_parameters')!=PARAMETERS
+                or any(r.get('parameters')!=PARAMETERS for r in requests)):
+            raise ValidationError('compatibility wire settings changed')
     if pilot_phase is not None:
         from .free_tier_campaign import PHASES, MODEL
         if pilot_phase not in PHASES or manifest.get("pilot_phase") != pilot_phase or manifest.get("campaign_version") != "flash-lite-v1":
@@ -96,7 +106,7 @@ def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, rec
         "manifests": re.compile(r"^" + re.escape(run_id) + r"\.json$"),
         "raw": re.compile(r"^(?:" + "|".join(re.escape(k) for k in request_keys) + r")/attempt-01\.(started|response)\.json$"),
         "parsed": re.compile(r"^(benchmark\.jsonl|benchmark_metadata\.json|analysis_index\.json|(?:" + "|".join(re.escape(k) for k in request_keys) + r")\.json)$"),
-        "summaries": re.compile(r"^(completion-[a-f0-9]{16}\.json" + (r"|dispatch-audit\.json" if recovery or chained or pilot_phase is not None else "") + r")$"),
+        "summaries": re.compile(r"^(completion-[a-f0-9]{16}\.json" + (r"|dispatch-audit\.json" if recovery or chained or pilot_phase is not None or compatibility else "") + r")$"),
     }
     for path in candidates:
         if path.is_symlink():

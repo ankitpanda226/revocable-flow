@@ -1,12 +1,12 @@
 // Read-only GitHub workflow-history gate. Never contacts a model provider.
-module.exports = async function ({github, context, core, phase, priorRunId}) {
+module.exports = async function ({github, context, core, phase, priorRunId, workflowId='free-tier-pilot.yml', executionStep='Run only explicitly selected bounded phase'}) {
   const phases = ['connectivity', 'small_pilot', 'remaining_post', 'paired_pre'];
   const expected = phases.indexOf(phase);
   if (expected < 0) throw new Error('Unknown phase');
   const {owner, repo} = context.repo;
   const current = BigInt(context.runId);
   const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
-    owner, repo, workflow_id: 'free-tier-pilot.yml', branch: 'main', per_page: 100
+    owner, repo, workflow_id: workflowId, branch: 'main', per_page: 100
   });
   const attempted = [];
   for (const run of runs) {
@@ -20,12 +20,12 @@ module.exports = async function ({github, context, core, phase, priorRunId}) {
       throw new Error('Earlier dispatch has ambiguous job history');
     }
     const executionSteps = jobs.flatMap(job => (job.steps || []).filter(step =>
-      step.name === 'Run only explicitly selected bounded phase'));
+      step.name === executionStep));
     if (executionSteps.some(step => step.status !== 'completed' && step.status !== 'pending')) {
       throw new Error('Earlier execution step has an ambiguous outcome');
     }
     const started = jobs.some(job => (job.steps || []).some(step =>
-      step.name === 'Run only explicitly selected bounded phase' && step.status === 'completed' &&
+      step.name === executionStep && step.status === 'completed' &&
       step.conclusion !== 'skipped'));
     if (started) attempted.push(run);
   }

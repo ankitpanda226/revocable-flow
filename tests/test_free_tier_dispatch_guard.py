@@ -9,18 +9,20 @@ GUARD = ROOT / '.github/scripts/free_tier_dispatch_guard.js'
 
 
 class DispatchGuardTests(unittest.TestCase):
-    def invoke(self, phase, runs, prior='', jobs=None):
+    def invoke(self, phase, runs, prior='', jobs=None, workflow_id=None, execution_step=None):
         payload = {'phase': phase, 'runs': runs, 'prior': prior, 'jobs': jobs or {}}
+        if workflow_id:payload['workflowId']=workflow_id
+        if execution_step:payload['executionStep']=execution_step
         script = '''
 const fs = require('fs'); const p = JSON.parse(fs.readFileSync(0,'utf8'));
 const guard = require(process.argv[1]); const output = {};
 const actions = {listWorkflowRuns:'runs', listJobsForWorkflowRunAttempt:'jobs'};
 const github = {rest:{actions}, paginate:async (method,args) => {
  if(method==='runs') return p.runs;
- return p.jobs[String(args.run_id)] || [{steps:[{name:'Run only explicitly selected bounded phase', status:'completed', conclusion:'success'}]}];
+ return p.jobs[String(args.run_id)] || [{steps:[{name:p.executionStep || 'Run only explicitly selected bounded phase', status:'completed', conclusion:'success'}]}];
 }};
 guard({github,context:{repo:{owner:'SYN-owner',repo:'SYN-repo'},runId:999},
- core:{setOutput:(k,v)=>output[k]=v},phase:p.phase,priorRunId:p.prior})
+ core:{setOutput:(k,v)=>output[k]=v},phase:p.phase,priorRunId:p.prior,workflowId:p.workflowId,executionStep:p.executionStep})
  .then(()=>process.stdout.write(JSON.stringify({ok:true,output})))
  .catch(()=>process.stdout.write(JSON.stringify({ok:false})));
 '''
@@ -37,6 +39,12 @@ guard({github,context:{repo:{owner:'SYN-owner',repo:'SYN-repo'},runId:999},
         self.assertTrue(self.invoke('connectivity', [])['ok'])
         for conclusion in ('success', 'failure', 'cancelled'):
             self.assertFalse(self.invoke('connectivity', [self.run_record(conclusion=conclusion)])['ok'])
+
+    def test_isolated_compatibility_workflow_cannot_repeat_attempt(self):
+        args={'workflow_id':'flash-lite-compatibility.yml','execution_step':'Execute exactly one compatibility request'}
+        self.assertTrue(self.invoke('connectivity',[],**args)['ok'])
+        for conclusion in ('success','failure','cancelled'):
+            self.assertFalse(self.invoke('connectivity',[self.run_record(conclusion=conclusion)],**args)['ok'])
 
     def test_later_phases_require_exact_history_count_and_predecessor(self):
         for phase, count in (('small_pilot', 1), ('remaining_post', 2), ('paired_pre', 3)):
