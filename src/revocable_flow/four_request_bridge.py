@@ -19,6 +19,7 @@ from .runner import _digest, _read, _write, execute_plan, plan_run
 from .schema import ValidationError
 
 SCOPE='configs/flash_lite_next_four_v1.json'
+CONTINUATION_SCOPE='configs/flash_lite_requests_006_009_v1.json'
 
 
 def require(ok,message):
@@ -27,11 +28,13 @@ def require(ok,message):
 
 def load_scope(path=SCOPE):
     s=json.loads(Path(path).read_text())
+    second=s['version']=='flash-lite-next-four-v2'
     require((s['provider'],s['model'],s['phase'],s['condition'],s['execution_indices'],
              s['maximum_new_requests'],s['max_attempts_per_request'],s['maximum_total_research_budget_usd'],
-             s['next_phases_enabled'])==('google',MODEL,'small_pilot','post_update',[2,3,4,5],4,1,4,False),
+             s['next_phases_enabled'])==('google',MODEL,'remaining_post_slice' if second else 'small_pilot',
+                                        'post_update',[6,7,8,9] if second else [2,3,4,5],4,1,4,False),
             'four-request scope changed')
-    require(s['version']=='flash-lite-next-four-v1' and s['maximum_authorized_paid_cost_usd']==0,
+    require(s['version'] in ('flash-lite-next-four-v1','flash-lite-next-four-v2') and s['maximum_authorized_paid_cost_usd']==0,
             'scope version or paid-spending gate changed')
     return s
 
@@ -39,6 +42,8 @@ def load_scope(path=SCOPE):
 def bridge(source,*,config=CONFIG,scope=SCOPE):
     source=Path(source);pin=load_scope(scope);source_hashes=file_hashes(source)
     require(source_hashes==pin['source_file_hashes'],'source missing/extra/changed files')
+    if pin['version']=='flash-lite-next-four-v2':
+        return continuation_bridge(source,pin,config=config)
     m=_read(source,f"manifests/{pin['source_run_id']}.json");identity=deepcopy(m);digest=identity.pop('manifest_hash')
     require(_digest(identity)==digest==pin['source_manifest_hash'],'source manifest hash mismatch')
     require(m['run_id']==pin['source_run_id'] and m['commit']==pin['source_commit'] and m['git_dirty'] is False,
@@ -126,6 +131,80 @@ def bridge(source,*,config=CONFIG,scope=SCOPE):
     return result,schedule
 
 
+def continuation_bridge(source,pin,*,config=CONFIG):
+    """Validate the existing 28-record chain without rewriting any source file."""
+    prior,schedule=bridge(source/'source',config=config,scope=SCOPE)
+    m=_read(source/'batch',f"manifests/{pin['source_run_id']}.json")
+    unsigned=deepcopy(m);digest=unsigned.pop('manifest_hash')
+    require(_digest(unsigned)==digest==pin['source_manifest_hash'] and m['commit']==pin['source_commit'] and
+            m['git_dirty'] is False and m['provenance_bridge']==prior and
+            prior['bridge_hash']==pin['source_bridge_hash'],'previous batch provenance mismatch')
+    expected=prepare(source/'source',m['run_id'],m['owner_approvals'],config=config,scope=SCOPE,
+                     _source_validation=True).manifest
+    # Host runtime metadata is evidence, not an experimental setting.
+    for key in ('commit','git_dirty','python_version'):expected[key]=m[key]
+    expected.pop('manifest_hash')
+    require(_digest(expected)==digest,'previous batch manifest does not reproduce')
+    import tempfile
+    with tempfile.TemporaryDirectory() as scratch:
+        archive(source/'source',source/'batch',m['run_id'],Path(scratch)/'verified')
+    ledger_record=_read(source/'batch',f"summaries/{m['run_id']}/campaign-ledger.json")
+    ledger=ledger_record['ledger']
+    require(len(ledger)==5 and [r['execution_index'] for r in ledger]==[1,2,3,4,5] and
+            all(r['status']=='terminal_completed' for r in ledger),'uncertain, failed, or duplicate previous attempt')
+    audit=_read(source/'batch',f"summaries/{m['run_id']}/dispatch-audit.json")
+    require(audit['manifest_hash']==digest and audit['bridge_hash']==prior['bridge_hash'] and
+            audit['maximum_new_requests']==4 and audit['provider_calls_entered']==4 and
+            audit['automatic_retries']==0 and audit['followup_workflow_dispatches']==0 and
+            audit['runner_terminated_normally'] is True and
+            [o['execution_index'] for o in audit['observations']]==[2,3,4,5], 'previous dispatch audit mismatch')
+    for request,observation in zip(m['requests'],audit['observations']):
+        index=request['execution_index'];scenario=schedule.scenarios[index-1]
+        messages=build_messages(scenario,'post_update')
+        require(observation['http_status']==200 and observation['transport_exception_type'] is None and
+                observation['requested_model']==MODEL and observation['payload_sha256']==
+                sha256(json.dumps(GoogleProvider().payload(messages,MODEL,PARAMETERS)).encode()).hexdigest(),
+                'previous request HTTP/wire audit mismatch')
+        raw=_read(source/'batch',f"raw/{m['run_id']}/{request['request_key']}/attempt-01.response.json")
+        require(raw['requested_model']==raw['reported_model']==MODEL and raw['unsupported_parameters']==[] and
+                raw['requested_parameters']==raw['effective_parameters']==raw['parameters']==PARAMETERS,
+                'previous response model/parameter mismatch')
+        reproduced=make_raw_record(scenario=scenario,raw_output=raw['raw_output'],execution_index=index,
+            provider='google',model=MODEL,timestamp=raw['timestamp'],condition='post_update',parameters=PARAMETERS,
+            latency_ms=raw['latency_ms'],request_id=raw['request_id'])
+        require(all(raw.get(k)==v for k,v in reproduced.items()),'previous response does not reproduce')
+    paths=list((source/'batch'/f"summaries/{m['run_id']}").glob('completion-*.json'))
+    require(len(paths)==1,'previous completion missing/ambiguous')
+    summary=_read(source/'batch',paths[0].relative_to(source/'batch').as_posix())
+    require(paths[0].name==f'completion-{_digest(summary)[:16]}.json' and summary['manifest_hash']==digest and
+            summary['complete'] is True and summary['completed']==summary['attempted_provider_requests']==4 and
+            not summary['ambiguous_attempts'] and not summary['infrastructure_missing'] and
+            not summary['unattempted_requests'],'previous run incomplete/ambiguous')
+    attempted={_digest(r['identity']) for r in ledger};eligible=[]
+    for condition,indices in PHASES.values():
+        for index in indices:
+            scenario=schedule.scenarios[index-1]
+            identity={'provider':'google','model':MODEL,'scenario_id':scenario.scenario_id,
+                      'condition':condition,'repetition':1}
+            if _digest(identity) not in attempted:
+                eligible.append({'identity':identity,'execution_index':index,
+                    'request_key':f'model-01/{condition}/{index:03d}',
+                    'prompt_hash':_digest(build_messages(scenario,condition))})
+    proposed=eligible[:4]
+    require([r['execution_index'] for r in proposed]==[6,7,8,9] and
+            [r['identity']['scenario_id'] for r in proposed]==['purpose_change-07','consent_revocation-02',
+                'purpose_change-03','scope_change-04'] and
+            all(r['identity']['condition']=='post_update' for r in proposed),'next frozen identities changed')
+    result={'bridge_version':2,'benchmark_hash':BENCHMARK_HASH,'model':MODEL,'condition':'post_update',
+        'source_github_run_id':pin['source_github_run_id'],'source_attempt':pin['source_attempt'],
+        'source_run_id':m['run_id'],'source_manifest_hash':digest,'source_file_hashes':file_hashes(source),
+        'prior_bridge_hash':prior['bridge_hash'],'ledger':deepcopy(ledger),'next_requests':proposed,
+        'maximum_new_requests':4,'max_attempts_per_request':1,'later_phases_enabled':False,
+        'exploratory_analysis_in_primary':False}
+    result['bridge_hash']=_digest(result)
+    return result,schedule
+
+
 def approvals_checked(approval,quota_floor):
     flags={'four_requests_approved','key_project_binding_confirmed','free_tier_no_paid_billing_confirmed',
            'quota_review_confirmed','all_provider_budget_review_confirmed'}
@@ -140,7 +219,7 @@ def approvals_checked(approval,quota_floor):
             approval['available_tpm_tokens']>=quota_floor,'insufficient reviewed quota headroom')
 
 
-def prepare(source,run_id,approval,*,config=CONFIG,scope=SCOPE):
+def prepare(source,run_id,approval,*,config=CONFIG,scope=SCOPE,_source_validation=False):
     lineage,schedule=bridge(source,config=config,scope=scope)
     # Re-plan to validate run ID/artifact paths; base configuration stays disabled.
     plan=plan_run(config,run_id=run_id,provider='google',model=MODEL,condition='post_update',
@@ -156,7 +235,7 @@ def prepare(source,run_id,approval,*,config=CONFIG,scope=SCOPE):
         'condition':'post_update','provider':'google','model':MODEL,'model_index':1,'parameters':PARAMETERS.copy(),
         'prompt_hash':r['prompt_hash']} for r in lineage['next_requests']],expected_request_count=4,
         expected_if_all_selected_enabled=4,enabled_models=1,primary_complete_design=False,
-        experiment_kind='flash_lite_pinned_next_four_v1',provenance_bridge=lineage,
+        experiment_kind=f"flash_lite_pinned_next_four_v{lineage['bridge_version']}",provenance_bridge=lineage,
         provider_checks=[{'provider':'google','model':MODEL,'scoped_continuation_only':True,
                           'requested_parameters':PARAMETERS.copy(),'effective_parameters':PARAMETERS.copy(),
                           'unsupported_parameters':[]}],
@@ -165,8 +244,17 @@ def prepare(source,run_id,approval,*,config=CONFIG,scope=SCOPE):
         execution_limits={'max_provider_requests':4,'max_attempts_per_request':1,'stop_on_http_statuses':[429],
                           'stop_after_consecutive_http_503':2,'stop_on_ambiguous':True,'stop_on_unconfirmed_transport':True})
     m.pop('manifest_hash');m['manifest_hash']=_digest(m)
-    require(not (plan.root/f'manifests/{run_id}.json').exists() and
-            not any((plan.root/section/run_id).exists() for section in ('raw','parsed','summaries')),'batch ID already claimed; no resume')
+    if lineage['bridge_version']==2:
+        m['dispatch_claim_key']=_digest([r['identity'] for r in lineage['next_requests']])
+        m.pop('manifest_hash');m['manifest_hash']=_digest(m)
+        require(not (plan.root/f"claims/{m['dispatch_claim_key']}.json").exists(),'four-identity scope already claimed')
+        for path in (plan.root/'manifests').glob('*.json'):
+            other=_read(plan.root,path.relative_to(plan.root).as_posix())
+            require(not any(r.get('provider')=='google' and r.get('model')==MODEL and
+                            r.get('condition')=='post_update' and r.get('execution_index') in indices
+                            for r in other.get('requests',[])), 'existing/uncertain overlapping experiment')
+    require(_source_validation or (not (plan.root/f'manifests/{run_id}.json').exists() and
+            not any((plan.root/section/run_id).exists() for section in ('raw','parsed','summaries'))),'batch ID already claimed; no resume')
     return plan
 
 
@@ -174,6 +262,13 @@ def run(source,run_id,approval,*,config=CONFIG,scope=SCOPE,transport=None):
     plan=prepare(source,run_id,approval,config=config,scope=scope)
     require(plan.manifest['git_dirty'] is False and bool(plan.manifest['commit']), 'clean committed checkout required')
     require(bool(os.environ.get('GOOGLE_API_KEY')), 'Google credential unavailable; no attempt authorized')
+    if plan.manifest['provenance_bridge']['bridge_version']==2:
+        claim={'run_id':run_id,'manifest_hash':plan.manifest['manifest_hash'],
+               'dispatch_claim_key':plan.manifest['dispatch_claim_key'],
+               'identities':[r['identity'] for r in plan.manifest['provenance_bridge']['next_requests']]}
+        try:_write(plan.root,f"claims/{plan.manifest['dispatch_claim_key']}.json",claim)
+        except FileExistsError:raise ValidationError('overlapping or previously claimed scope; never redispatch') from None
+        _write(plan.root,f'summaries/{run_id}/scope-claim.json',claim)
     expected={_digest(GoogleProvider().payload(p['messages'],MODEL,PARAMETERS)):p['execution_index']
               for p in plan.manifest['prompt_catalog']};seen=set();observations=[]
     require(len(expected)==4,'duplicate outbound identities')
@@ -213,7 +308,8 @@ def run(source,run_id,approval,*,config=CONFIG,scope=SCOPE,transport=None):
                 elif (plan.root/started_path).exists():item['status']='ambiguous_claimed_never_redispatch'
                 else:item['status']='not_attempted'
                 ledger.append(item)
-            require(len({_digest(r['identity']) for r in ledger})==5,'duplicate campaign ledger identity')
+            require(len({_digest(r['identity']) for r in ledger})==len(plan.manifest['provenance_bridge']['ledger'])+4,
+                    'duplicate campaign ledger identity')
             _write(plan.root,f'summaries/{run_id}/campaign-ledger.json',{'bridge_hash':plan.manifest['provenance_bridge']['bridge_hash'],
                 'manifest_hash':plan.manifest['manifest_hash'],'ledger':ledger,'later_phases_enabled':False})
     require(file_hashes(source)==plan.manifest['provenance_bridge']['source_file_hashes'],'source changed during execution')
@@ -228,17 +324,23 @@ def archive(source,results,run_id,destination):
     require(file_hashes(source)==m['provenance_bridge']['source_file_hashes'],'source changed before archive')
     ledger_record=_read(root,f'summaries/{run_id}/campaign-ledger.json')
     ledger=ledger_record['ledger']
+    preserved=len(m['provenance_bridge']['ledger'])
+    if m['provenance_bridge']['bridge_version']==2:
+        claim=_read(root,f'summaries/{run_id}/scope-claim.json')
+        require(claim=={'run_id':run_id,'manifest_hash':digest,'dispatch_claim_key':m['dispatch_claim_key'],
+                       'identities':[r['identity'] for r in m['provenance_bridge']['next_requests']]} and
+                _digest(claim['identities'])==m['dispatch_claim_key'],'scope claim changed')
     require(ledger_record['manifest_hash']==digest and ledger_record['bridge_hash']==m['provenance_bridge']['bridge_hash']
-            and len(ledger)==5 and len({_digest(r['identity']) for r in ledger})==5 and
-            ledger[0]==m['provenance_bridge']['ledger'][0] and
-            [r['identity'] for r in ledger[1:]]==[r['identity'] for r in m['provenance_bridge']['next_requests']],
+            and len(ledger)==preserved+4 and len({_digest(r['identity']) for r in ledger})==preserved+4 and
+            ledger[:preserved]==m['provenance_bridge']['ledger'] and
+            [r['identity'] for r in ledger[preserved:]]==[r['identity'] for r in m['provenance_bridge']['next_requests']],
             'campaign ledger changed or duplicate identity')
     benchmark=root/m['benchmark_artifact']
     require(sha256(benchmark.read_bytes()).hexdigest()==BENCHMARK_HASH,'batch benchmark copy changed')
     # The copied benchmark is hash-pinned; require_pilot expects metadata.json
     # beside it, whereas run artifacts preserve benchmark_metadata.json.
     scenarios={s.scenario_id:s for s in load_scenarios(benchmark)}
-    for entry in ledger[1:]:
+    for entry in ledger[preserved:]:
         key=entry['request_key'];started=root/f'raw/{run_id}/{key}/attempt-01.started.json'
         response=root/f'raw/{run_id}/{key}/attempt-01.response.json'
         parsed=root/f'parsed/{run_id}/{key}.json'
@@ -270,7 +372,10 @@ def archive(source,results,run_id,destination):
     import tempfile
     with tempfile.TemporaryDirectory() as scratch:
         original=Path(scratch)/'source';current=Path(scratch)/'batch'
-        stage_archive(source,m['provenance_bridge']['ledger'][0]['source_run_id'],original,compatibility=True)
+        if m['provenance_bridge']['bridge_version']==2:
+            archive(Path(source)/'source',Path(source)/'batch',m['provenance_bridge']['source_run_id'],original)
+        else:
+            stage_archive(source,m['provenance_bridge']['ledger'][0]['source_run_id'],original,compatibility=True)
         stage_archive(root,run_id,current,next_four=True)
         for name,staged in (('source',original),('batch',current)):
             for p in staged.rglob('*'):

@@ -1,0 +1,172 @@
+{
+  "name": "Flash-Lite requests 006\u2013009 (manual only)",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "key_project_binding_confirmed": {
+          "description": "I verified GOOGLE_API_KEY in GitHub belongs to Default Gemini Project",
+          "type": "boolean",
+          "required": true,
+          "default": false
+        },
+        "free_tier_no_paid_billing_confirmed": {
+          "description": "I rechecked that this key project is Free tier with no paid billing configured",
+          "type": "boolean",
+          "required": true,
+          "default": false
+        },
+        "quota_review_confirmed": {
+          "description": "I reviewed current Flash-Lite RPM/TPM/RPD quota and usage for this one request",
+          "type": "boolean",
+          "required": true,
+          "default": false
+        },
+        "all_provider_budget_review_confirmed": {
+          "description": "I reconciled actual all-provider research spending below $4; request caps are not dollar guarantees",
+          "type": "boolean",
+          "required": true,
+          "default": false
+        },
+        "reviewed_spend_usd": {
+          "description": "Reviewed actual cumulative all-provider USD spend; unknown values must stop",
+          "type": "string",
+          "required": true,
+          "default": ""
+        },
+        "four_requests_approved": {
+          "description": "I separately approve ONLY frozen post-update identities 006\u2013009; zero retries and no follow-up phases",
+          "type": "boolean",
+          "required": true,
+          "default": false
+        },
+        "available_rpm_requests": {
+          "description": "Fresh available RPM requests; at least 4 of attested 15",
+          "type": "string",
+          "required": true,
+          "default": ""
+        },
+        "available_rpd_requests": {
+          "description": "Fresh available RPD requests; at least 4 of attested 500",
+          "type": "string",
+          "required": true,
+          "default": ""
+        },
+        "available_tpm_tokens": {
+          "description": "Fresh available TPM tokens; must exceed offline conservative byte-based headroom floor; at most attested 250000",
+          "type": "string",
+          "required": true,
+          "default": ""
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "flash-lite-pilot-v1",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "requests_006_009": {
+      "if": "github.ref == 'refs/heads/main' && github.run_attempt == 1",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 10,
+      "env": {
+        "PYTHONPATH": "src",
+        "RUN_ID": "gh-flash-lite-006009-${{ github.run_id }}-1",
+        "REVIEWED_SPEND_USD": "${{ inputs.reviewed_spend_usd }}",
+        "KEY_PROJECT_BINDING_CONFIRMED": "${{ inputs.key_project_binding_confirmed }}",
+        "FREE_TIER_NO_PAID_BILLING_CONFIRMED": "${{ inputs.free_tier_no_paid_billing_confirmed }}",
+        "QUOTA_REVIEW_CONFIRMED": "${{ inputs.quota_review_confirmed }}",
+        "ALL_PROVIDER_BUDGET_REVIEW_CONFIRMED": "${{ inputs.all_provider_budget_review_confirmed }}",
+        "FOUR_REQUESTS_APPROVED": "${{ inputs.four_requests_approved }}",
+        "AVAILABLE_RPM_REQUESTS": "${{ inputs.available_rpm_requests }}",
+        "AVAILABLE_RPD_REQUESTS": "${{ inputs.available_rpd_requests }}",
+        "AVAILABLE_TPM_TOKENS": "${{ inputs.available_tpm_tokens }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "fetch-depth": 0,
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Install project",
+          "run": "python -m pip install ."
+        },
+        {
+          "name": "Offline tests and frozen benchmark validation",
+          "run": "python -m unittest discover -s tests -v\npython -m revocable_flow.cli validate data/pilot/scenarios.jsonl --pilot"
+        },
+        {
+          "name": "Verify fixed five-attempt predecessor run provenance",
+          "uses": "actions/github-script@v7",
+          "with": {
+            "script": "const {data:r}=await github.rest.actions.getWorkflowRun({owner:context.repo.owner,repo:context.repo.repo,run_id:38080218987}); if(context.repo.owner!=='ankitpanda226'||context.repo.repo!=='revocable-flow'||r.run_attempt!==1||r.path!=='.github/workflows/flash-lite-next-four.yml'||r.head_sha!=='b7b528fcf17324206bca385e6c05b8fdb3700db8'||r.head_branch!=='main'||r.event!=='workflow_dispatch'||r.status!=='completed'||r.conclusion!=='success') throw new Error('Original run provenance mismatch');"
+          }
+        },
+        {
+          "name": "Download existing original records; no diagnostic rerun",
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "name": "flash-lite-next-four-results",
+            "run-id": 38080218987,
+            "github-token": "${{ github.token }}",
+            "path": "${{ runner.temp }}/four-source"
+          }
+        },
+        {
+          "name": "Validate pinned bridge, fresh authorization, quota and budget",
+          "id": "preflight",
+          "run": "python .github/scripts/flash_lite_next_four.py check --scope 006-009"
+        },
+        {
+          "name": "Reject any prior attempted four-request dispatch",
+          "uses": "actions/github-script@v7",
+          "with": {
+            "script": "const guard=require(process.env.GITHUB_WORKSPACE+'/.github/scripts/free_tier_dispatch_guard.js'); await guard({github,context,core,phase:'connectivity',priorRunId:'',workflowId:'flash-lite-006-009.yml',executionStep:'Execute only frozen requests 006\u2013009'}); await guard({github,context,core,phase:'small_pilot',priorRunId:'38080218987',workflowId:'flash-lite-next-four.yml',executionStep:'Execute exactly four pinned requests',predecessorPath:'.github/workflows/flash-lite-next-four.yml',expectedPriorCommit:'b7b528fcf17324206bca385e6c05b8fdb3700db8'}); await guard({github,context,core,phase:'connectivity',priorRunId:'',workflowId:'free-tier-pilot.yml',executionStep:'Run only explicitly selected bounded phase'});"
+          }
+        },
+        {
+          "name": "Execute only frozen requests 006\u2013009",
+          "id": "run",
+          "env": {
+            "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}"
+          },
+          "run": "python .github/scripts/flash_lite_next_four.py run --execute-live --scope 006-009"
+        },
+        {
+          "name": "Inspect original plus batch records for safe upload",
+          "id": "artifacts",
+          "if": "${{ always() && steps.preflight.outcome == 'success' && steps.run.outcome != 'skipped' && steps.run.outcome != '' }}",
+          "env": {
+            "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}",
+            "GITHUB_TOKEN": "${{ github.token }}"
+          },
+          "run": "python .github/scripts/flash_lite_next_four.py archive --scope 006-009"
+        },
+        {
+          "name": "Upload inspected original and next-four records",
+          "if": "${{ always() && steps.artifacts.outputs.safe == 'true' }}",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "flash-lite-006-009-results",
+            "path": "${{ runner.temp }}/four-upload/",
+            "if-no-files-found": "error",
+            "retention-days": 90
+          }
+        }
+      ]
+    }
+  }
+}

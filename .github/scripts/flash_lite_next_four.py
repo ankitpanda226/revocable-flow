@@ -3,6 +3,7 @@ import argparse
 import os
 from pathlib import Path
 from revocable_flow.four_request_bridge import prepare, run, archive
+from revocable_flow.four_request_bridge import SCOPE, CONTINUATION_SCOPE
 
 
 def approvals():
@@ -19,12 +20,14 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('command',choices=('check','run','archive'))
     parser.add_argument('--execute-live',action='store_true')
+    parser.add_argument('--scope',choices=('002-005','006-009'),default='002-005')
     args=parser.parse_args()
     try:
         source=Path(os.environ['RUNNER_TEMP'])/'four-source'
         run_id=os.environ['RUN_ID']
+        scope=CONTINUATION_SCOPE if args.scope=='006-009' else SCOPE
         if args.command=='check':
-            plan=prepare(source,run_id,approvals())
+            plan=prepare(source,run_id,approvals(),scope=scope)
             if plan.manifest['git_dirty'] is not False or not plan.manifest['commit']:
                 raise ValueError('clean committed checkout required')
             print('Verified source; next four post-update identities only; no request executed.')
@@ -32,7 +35,7 @@ if __name__=='__main__':
                    'quota_headroom_floor':plan.manifest['quota_review']['conservative_byte_based_headroom_floor']})
         elif args.command=='run':
             if not args.execute_live:raise ValueError('explicit live flag required')
-            _,summary=run(source,run_id,approvals())
+            _,summary=run(source,run_id,approvals(),scope=scope)
             print({'attempted':summary['attempted_provider_requests'],'completed':summary['completed']})
             raise SystemExit(0 if summary['complete'] else 1)
         else:

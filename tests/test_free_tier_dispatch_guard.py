@@ -9,10 +9,13 @@ GUARD = ROOT / '.github/scripts/free_tier_dispatch_guard.js'
 
 
 class DispatchGuardTests(unittest.TestCase):
-    def invoke(self, phase, runs, prior='', jobs=None, workflow_id=None, execution_step=None):
+    def invoke(self, phase, runs, prior='', jobs=None, workflow_id=None, execution_step=None,
+               predecessor_path=None, expected_prior_commit=None):
         payload = {'phase': phase, 'runs': runs, 'prior': prior, 'jobs': jobs or {}}
         if workflow_id:payload['workflowId']=workflow_id
         if execution_step:payload['executionStep']=execution_step
+        if predecessor_path:payload['predecessorPath']=predecessor_path
+        if expected_prior_commit:payload['expectedPriorCommit']=expected_prior_commit
         script = '''
 const fs = require('fs'); const p = JSON.parse(fs.readFileSync(0,'utf8'));
 const guard = require(process.argv[1]); const output = {};
@@ -22,7 +25,8 @@ const github = {rest:{actions}, paginate:async (method,args) => {
  return p.jobs[String(args.run_id)] || [{steps:[{name:p.executionStep || 'Run only explicitly selected bounded phase', status:'completed', conclusion:'success'}]}];
 }};
 guard({github,context:{repo:{owner:'SYN-owner',repo:'SYN-repo'},runId:999},
- core:{setOutput:(k,v)=>output[k]=v},phase:p.phase,priorRunId:p.prior,workflowId:p.workflowId,executionStep:p.executionStep})
+ core:{setOutput:(k,v)=>output[k]=v},phase:p.phase,priorRunId:p.prior,workflowId:p.workflowId,executionStep:p.executionStep,
+ predecessorPath:p.predecessorPath,expectedPriorCommit:p.expectedPriorCommit})
  .then(()=>process.stdout.write(JSON.stringify({ok:true,output})))
  .catch(()=>process.stdout.write(JSON.stringify({ok:false})));
 '''
@@ -61,6 +65,18 @@ guard({github,context:{repo:{owner:'SYN-owner',repo:'SYN-repo'},runId:999},
             self.assertFalse(self.invoke('connectivity',[self.run_record(conclusion=conclusion)],**args)['ok'])
         jobs={'1':[{'steps':[{'name':args['execution_step'],'status':'completed','conclusion':'failure'}]}]}
         self.assertFalse(self.invoke('connectivity',[self.run_record(conclusion='failure')],jobs=jobs,**args)['ok'])
+
+    def test_006009_requires_exact_single_successful_prior_batch_and_commit(self):
+        args={'workflow_id':'flash-lite-next-four.yml','execution_step':'Execute exactly four pinned requests',
+              'predecessor_path':'.github/workflows/flash-lite-next-four.yml','expected_prior_commit':'1'*40}
+        prior=self.run_record(path=args['predecessor_path'])
+        self.assertTrue(self.invoke('small_pilot',[prior],'1',**args)['ok'])
+        for change in ({'head_sha':'2'*40},{'conclusion':'failure'},{'run_attempt':2},{'status':'in_progress'}):
+            self.assertFalse(self.invoke('small_pilot',[{**prior,**change}],'1',**args)['ok'])
+        self.assertFalse(self.invoke('small_pilot',[prior,self.run_record(2)],'1',**args)['ok'])
+        scoped={'workflow_id':'flash-lite-006-009.yml','execution_step':'Execute only frozen requests 006–009'}
+        self.assertTrue(self.invoke('connectivity',[],**scoped)['ok'])
+        self.assertFalse(self.invoke('connectivity',[self.run_record(conclusion='failure')],**scoped)['ok'])
 
     def test_ambiguous_reruns_and_invalid_predecessor_block(self):
         for change in ({'status':'in_progress'}, {'run_attempt':2}, {'conclusion':'failure'},

@@ -1,5 +1,5 @@
 // Read-only GitHub workflow-history gate. Never contacts a model provider.
-module.exports = async function ({github, context, core, phase, priorRunId, workflowId='free-tier-pilot.yml', executionStep='Run only explicitly selected bounded phase'}) {
+module.exports = async function ({github, context, core, phase, priorRunId, workflowId='free-tier-pilot.yml', executionStep='Run only explicitly selected bounded phase', predecessorPath='.github/workflows/free-tier-pilot.yml', expectedPriorCommit=null}) {
   const phases = ['connectivity', 'small_pilot', 'remaining_post', 'paired_pre'];
   const expected = phases.indexOf(phase);
   if (expected < 0) throw new Error('Unknown phase');
@@ -37,9 +37,10 @@ module.exports = async function ({github, context, core, phase, priorRunId, work
     return;
   }
   const prior = attempted[attempted.length - 1];
-  if (String(prior.id) !== priorRunId || prior.path !== '.github/workflows/free-tier-pilot.yml' ||
+  if (String(prior.id) !== priorRunId || prior.path !== predecessorPath ||
       prior.event !== 'workflow_dispatch' || prior.head_branch !== 'main' ||
-      prior.conclusion !== 'success' || !/^[0-9a-f]{40}$/.test(prior.head_sha)) {
+      prior.conclusion !== 'success' || !/^[0-9a-f]{40}$/.test(prior.head_sha) ||
+      (expectedPriorCommit !== null && prior.head_sha !== expectedPriorCommit)) {
     throw new Error('Immediate prior stage is not a verified successful manual pilot');
   }
   core.setOutput('commit', prior.head_sha);

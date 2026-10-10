@@ -64,11 +64,13 @@ def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, rec
         count, indices, expected_model = 4, {2,3,4,5}, 'gemini-3.5-flash-lite'
         bridge = manifest.get('provenance_bridge', {})
         unsigned = dict(bridge); digest = unsigned.pop('bridge_hash', None)
-        if (manifest.get('experiment_kind') != 'flash_lite_pinned_next_four_v1'
+        version=bridge.get('bridge_version')
+        if version==2:indices={6,7,8,9}
+        preserved=1 if version==1 else 5
+        if (version not in (1,2) or manifest.get('experiment_kind') != f'flash_lite_pinned_next_four_v{version}'
                 or digest != _digest(unsigned) or bridge.get('later_phases_enabled') is not False
-                or len(bridge.get('ledger', [])) != 1
-                or bridge['ledger'][0].get('execution_index') != 1
-                or bridge['ledger'][0].get('status') != 'terminal_completed'
+                or [r.get('execution_index') for r in bridge.get('ledger', [])] != list(range(1,preserved+1))
+                or any(r.get('status') != 'terminal_completed' for r in bridge.get('ledger', []))
                 or manifest.get('generation_parameters') != PARAMETERS
                 or any(r.get('parameters') != PARAMETERS for r in requests)):
             raise ValidationError('invalid fixed-four provenance or wire settings')
@@ -125,7 +127,7 @@ def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, rec
         "manifests": re.compile(r"^" + re.escape(run_id) + r"\.json$"),
         "raw": re.compile(r"^(?:" + "|".join(re.escape(k) for k in request_keys) + r")/attempt-01\.(started|response)\.json$"),
         "parsed": re.compile(r"^(benchmark\.jsonl|benchmark_metadata\.json|analysis_index\.json|(?:" + "|".join(re.escape(k) for k in request_keys) + r")\.json)$"),
-        "summaries": re.compile(r"^(completion-[a-f0-9]{16}\.json" + (r"|dispatch-audit\.json" if recovery or chained or pilot_phase is not None or compatibility or next_four else "") + (r"|campaign-ledger\.json" if next_four else "") + r")$"),
+        "summaries": re.compile(r"^(completion-[a-f0-9]{16}\.json" + (r"|dispatch-audit\.json" if recovery or chained or pilot_phase is not None or compatibility or next_four else "") + (r"|campaign-ledger\.json" if next_four else "") + (r"|scope-claim\.json" if next_four and version==2 else "") + r")$"),
     }
     for path in candidates:
         if path.is_symlink():
