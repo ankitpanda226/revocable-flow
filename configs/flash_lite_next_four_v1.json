@@ -1,0 +1,36 @@
+{
+  "version": "flash-lite-next-four-v1",
+  "provider": "google",
+  "model": "gemini-3.5-flash-lite",
+  "source_run_id": "gh-flash-lite-compat-37891267903-1",
+  "source_github_run_id": 37891267903,
+  "source_attempt": 1,
+  "source_commit": "57cd03bad7943c42ac5a458954e93a6c75f0cd1d",
+  "source_manifest_hash": "8b79d3e2c75a603e1d1bd5e0490b5132dcf271af20d84189725c44549419a273",
+  "source_file_hashes": {
+    "manifests/gh-flash-lite-compat-37891267903-1.json": "ee00e41f6bed8bf6a953c7cb14e522f86122d04ca5e7d77dafddbba0fafd666b",
+    "parsed/gh-flash-lite-compat-37891267903-1/benchmark_metadata.json": "cb05855f336e1c4422fb27d80e1fddd51c3b428165a9447bd12f7151ce870687",
+    "parsed/gh-flash-lite-compat-37891267903-1/analysis_index.json": "98e7bfc4fad772d173f88fac838172065d85ed56a222b02d464fd0c403bc3564",
+    "parsed/gh-flash-lite-compat-37891267903-1/benchmark.jsonl": "17e4da22029b31b280fcf711bec9c88f261f01ee40dd45137a2ad2540ed4c80d",
+    "parsed/gh-flash-lite-compat-37891267903-1/model-01/post_update/001.json": "ed09319f026d319115ffda65ce9ba4f25d2080af4464df050b5ccd994074c55d",
+    "raw/gh-flash-lite-compat-37891267903-1/model-01/post_update/001/attempt-01.started.json": "02e8a9e04270b05f429fad1dff9f57016914c33bc5bdbd4293eac89e37cb8fa4",
+    "raw/gh-flash-lite-compat-37891267903-1/model-01/post_update/001/attempt-01.response.json": "8efe2d61bc4be53a165740d2a1e0365c224213ceadb5f70071239e846c39a74b",
+    "summaries/gh-flash-lite-compat-37891267903-1/completion-3e3be18e1d456d36.json": "18b8e0a2a9b9488081a12f321b9fdbc669da46df9916f466ead96212d3bc1ffa",
+    "summaries/gh-flash-lite-compat-37891267903-1/dispatch-audit.json": "688dd0cd1e16913c958f0ba734a01ea9fc96d6acf65c209c6c1270d0b67ca5dc"
+  },
+  "source_config_hash": "1a8c9f0af05a0884843273e979f4edd5cf04db7ea3b4f47d19aa90c8c699a6e3",
+  "phase": "small_pilot",
+  "condition": "post_update",
+  "execution_indices": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "maximum_new_requests": 4,
+  "max_attempts_per_request": 1,
+  "maximum_total_research_budget_usd": 4,
+  "maximum_authorized_paid_cost_usd": 0,
+  "next_phases_enabled": false,
+  "scope": "manual bounded batch only; no broader campaign enablement"
+}

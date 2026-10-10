@@ -37,7 +37,7 @@ def _inspect_json(value):
             _inspect_json(child)
 
 
-def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, recovery=False, chained=False, pilot_phase=None, compatibility=False) -> int:
+def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, recovery=False, chained=False, pilot_phase=None, compatibility=False, next_four=False) -> int:
     if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", run_id):
         raise ValidationError("invalid archive run ID")
     root, destination = Path(root).absolute(), Path(destination).absolute()
@@ -52,11 +52,27 @@ def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, rec
     requests = manifest.get("requests", [])
     if not isinstance(requests, list) or any(not isinstance(r, dict) for r in requests):
         raise ValidationError("invalid archive request records")
-    if sum((bool(recovery), bool(chained), pilot_phase is not None, bool(compatibility))) > 1:
+    if sum((bool(recovery), bool(chained), pilot_phase is not None, bool(compatibility), bool(next_four))) > 1:
         raise ValidationError("select one archive mode")
     count = 1 if chained else (2 if recovery else 3)
     indices = {2} if chained else set(range(1, count + 1))
     condition, expected_model = "post_update", "gemini-3.8-flash"
+    if next_four:
+        from .four_request_bridge import approvals_checked
+        from .compatibility_probe import PARAMETERS
+        from .runner import _digest
+        count, indices, expected_model = 4, {2,3,4,5}, 'gemini-3.5-flash-lite'
+        bridge = manifest.get('provenance_bridge', {})
+        unsigned = dict(bridge); digest = unsigned.pop('bridge_hash', None)
+        if (manifest.get('experiment_kind') != 'flash_lite_pinned_next_four_v1'
+                or digest != _digest(unsigned) or bridge.get('later_phases_enabled') is not False
+                or len(bridge.get('ledger', [])) != 1
+                or bridge['ledger'][0].get('execution_index') != 1
+                or bridge['ledger'][0].get('status') != 'terminal_completed'
+                or manifest.get('generation_parameters') != PARAMETERS
+                or any(r.get('parameters') != PARAMETERS for r in requests)):
+            raise ValidationError('invalid fixed-four provenance or wire settings')
+        approvals_checked(manifest.get('owner_approvals'), manifest['quota_review']['conservative_byte_based_headroom_floor'])
     if compatibility:
         from .compatibility_probe import authorize, PARAMETERS
         count,indices,expected_model=1,{1},'gemini-3.5-flash-lite'
@@ -80,10 +96,13 @@ def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, rec
                 or lineage.get("maximum_new_requests") != count or lineage.get("source_failure_status") != 503
                 or not re.fullmatch(r"[0-9a-f]{64}", lineage.get("source_manifest_hash", ""))):
             raise ValidationError("invalid recovery lineage")
+    expected_limits = {"max_provider_requests": count, "max_attempts_per_request": 1}
+    if pilot_phase is not None or next_four:
+        expected_limits.update(stop_on_http_statuses=[429], stop_after_consecutive_http_503=2, stop_on_ambiguous=True)
+    if next_four:
+        expected_limits['stop_on_unconfirmed_transport'] = True
     if (manifest.get("run_id") != run_id or manifest.get("expected_request_count") != count or len(requests) != count
-            or manifest.get("execution_limits") != ({"max_provider_requests": count, "max_attempts_per_request": 1,
-                  "stop_on_http_statuses": [429], "stop_after_consecutive_http_503": 2, "stop_on_ambiguous": True}
-                  if pilot_phase is not None else {"max_provider_requests": count, "max_attempts_per_request": 1})
+            or manifest.get("execution_limits") != expected_limits
             or any(r.get("provider") != "google" or r.get("model") != expected_model
                    or r.get("condition") != condition for r in requests)
             or {r.get("execution_index") for r in requests} != indices):
@@ -106,7 +125,7 @@ def stage_archive(root: str | Path, run_id: str, destination: str | Path, *, rec
         "manifests": re.compile(r"^" + re.escape(run_id) + r"\.json$"),
         "raw": re.compile(r"^(?:" + "|".join(re.escape(k) for k in request_keys) + r")/attempt-01\.(started|response)\.json$"),
         "parsed": re.compile(r"^(benchmark\.jsonl|benchmark_metadata\.json|analysis_index\.json|(?:" + "|".join(re.escape(k) for k in request_keys) + r")\.json)$"),
-        "summaries": re.compile(r"^(completion-[a-f0-9]{16}\.json" + (r"|dispatch-audit\.json" if recovery or chained or pilot_phase is not None or compatibility else "") + r")$"),
+        "summaries": re.compile(r"^(completion-[a-f0-9]{16}\.json" + (r"|dispatch-audit\.json" if recovery or chained or pilot_phase is not None or compatibility or next_four else "") + (r"|campaign-ledger\.json" if next_four else "") + r")$"),
     }
     for path in candidates:
         if path.is_symlink():

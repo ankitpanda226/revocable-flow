@@ -358,6 +358,9 @@ def execute_plan(plan, *, execute_live=False, resume=False, adapters=None, sleep
         if terminal is None:
             failures.append(request["request_key"])
             status = (previous or {}).get("provider_error", {}).get("http_status")
+            if previous and status is None and limits.get("stop_on_unconfirmed_transport"):
+                stop_reason = "unconfirmed_provider_outcome"
+                break  # Scoped opt-in: an uncertain provider outcome is never redispatched.
             consecutive_503 = consecutive_503 + 1 if status == 503 else 0
             if status in limits.get("stop_on_http_statuses", []):
                 stop_reason = f"http_{status}"

@@ -54,6 +54,14 @@ guard({github,context:{repo:{owner:'SYN-owner',repo:'SYN-repo'},runId:999},
             self.assertFalse(self.invoke(phase, runs+[self.run_record(count+1)], str(count))['ok'])
             self.assertFalse(self.invoke(phase, runs[:-1], str(count))['ok'])
 
+    def test_next_four_invalid_output_or_provider_failure_never_repeat_batch(self):
+        args={'workflow_id':'flash-lite-next-four.yml','execution_step':'Execute exactly four pinned requests'}
+        self.assertTrue(self.invoke('connectivity',[],**args)['ok'])
+        for conclusion in ('success','failure','cancelled'):
+            self.assertFalse(self.invoke('connectivity',[self.run_record(conclusion=conclusion)],**args)['ok'])
+        jobs={'1':[{'steps':[{'name':args['execution_step'],'status':'completed','conclusion':'failure'}]}]}
+        self.assertFalse(self.invoke('connectivity',[self.run_record(conclusion='failure')],jobs=jobs,**args)['ok'])
+
     def test_ambiguous_reruns_and_invalid_predecessor_block(self):
         for change in ({'status':'in_progress'}, {'run_attempt':2}, {'conclusion':'failure'},
                        {'event':'push'}, {'head_sha':'bad'}, {'head_branch':'other'}):
