@@ -78,6 +78,19 @@ guard({github,context:{repo:{owner:'SYN-owner',repo:'SYN-repo'},runId:999},
         self.assertTrue(self.invoke('connectivity',[],**scoped)['ok'])
         self.assertFalse(self.invoke('connectivity',[self.run_record(conclusion='failure')],**scoped)['ok'])
 
+    def test_010013_exact_predecessor_and_no_previous_dispatch(self):
+        args={'workflow_id':'flash-lite-006-009.yml','execution_step':'Execute only frozen requests 006–009',
+              'predecessor_path':'.github/workflows/flash-lite-006-009.yml','expected_prior_commit':'1'*40}
+        prior=self.run_record(path=args['predecessor_path'])
+        self.assertTrue(self.invoke('small_pilot',[prior],'1',**args)['ok'])
+        for changes in ({'head_sha':'2'*40},{'conclusion':'failure'},{'run_attempt':2},{'status':'in_progress'}):
+            self.assertFalse(self.invoke('small_pilot',[{**prior,**changes}],'1',**args)['ok'])
+        self.assertFalse(self.invoke('small_pilot',[prior,self.run_record(2)],'1',**args)['ok'])
+        scoped={'workflow_id':'flash-lite-010-013.yml','execution_step':'Execute only frozen requests 010–013'}
+        self.assertTrue(self.invoke('connectivity',[],**scoped)['ok'])
+        for conclusion in ('success','failure','cancelled'):
+            self.assertFalse(self.invoke('connectivity',[self.run_record(conclusion=conclusion)],**scoped)['ok'])
+
     def test_ambiguous_reruns_and_invalid_predecessor_block(self):
         for change in ({'status':'in_progress'}, {'run_attempt':2}, {'conclusion':'failure'},
                        {'event':'push'}, {'head_sha':'bad'}, {'head_branch':'other'}):
@@ -91,6 +104,15 @@ guard({github,context:{repo:{owner:'SYN-owner',repo:'SYN-repo'},runId:999},
                               'status':'completed','conclusion':'skipped'}]}]}
         self.assertTrue(self.invoke('connectivity', [self.run_record(conclusion='failure')], jobs=jobs)['ok'])
         self.assertFalse(self.invoke('unknown', [])['ok'])
+
+    def test_missing_duplicate_or_pending_execution_history_is_ambiguous(self):
+        name='Execute only frozen requests 010–013'
+        args={'workflow_id':'flash-lite-010-013.yml','execution_step':name}
+        complete={'name':name,'status':'completed','conclusion':'skipped'}
+        for steps in ([],[{'name':'Other step','status':'completed'}],
+                      [complete,complete],[{'name':name,'status':'pending'}]):
+            self.assertFalse(self.invoke('connectivity',[self.run_record()],
+                             jobs={'1':[{'steps':steps}]},**args)['ok'])
 
     def test_history_guard_precedes_secret_bound_dispatch(self):
         workflow=json.loads((ROOT/'.github/workflows/free-tier-pilot.yml').read_text())

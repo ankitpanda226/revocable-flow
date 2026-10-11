@@ -20,6 +20,7 @@ from .schema import ValidationError
 
 SCOPE='configs/flash_lite_next_four_v1.json'
 CONTINUATION_SCOPE='configs/flash_lite_requests_006_009_v1.json'
+NEXT_SCOPE='configs/flash_lite_requests_010_013_v1.json'
 
 
 def require(ok,message):
@@ -28,13 +29,16 @@ def require(ok,message):
 
 def load_scope(path=SCOPE):
     s=json.loads(Path(path).read_text())
-    second=s['version']=='flash-lite-next-four-v2'
+    versions={'flash-lite-next-four-v1':[2,3,4,5],'flash-lite-next-four-v2':[6,7,8,9],
+              'flash-lite-next-four-v3':[10,11,12,13]}
+    require(s['version'] in versions,'unsupported fixed scope')
+    second=s['version']!='flash-lite-next-four-v1'
     require((s['provider'],s['model'],s['phase'],s['condition'],s['execution_indices'],
              s['maximum_new_requests'],s['max_attempts_per_request'],s['maximum_total_research_budget_usd'],
              s['next_phases_enabled'])==('google',MODEL,'remaining_post_slice' if second else 'small_pilot',
-                                        'post_update',[6,7,8,9] if second else [2,3,4,5],4,1,4,False),
+                                        'post_update',versions[s['version']],4,1,4,False),
             'four-request scope changed')
-    require(s['version'] in ('flash-lite-next-four-v1','flash-lite-next-four-v2') and s['maximum_authorized_paid_cost_usd']==0,
+    require(s['version'] in versions and s['maximum_authorized_paid_cost_usd']==0,
             'scope version or paid-spending gate changed')
     return s
 
@@ -42,7 +46,7 @@ def load_scope(path=SCOPE):
 def bridge(source,*,config=CONFIG,scope=SCOPE):
     source=Path(source);pin=load_scope(scope);source_hashes=file_hashes(source)
     require(source_hashes==pin['source_file_hashes'],'source missing/extra/changed files')
-    if pin['version']=='flash-lite-next-four-v2':
+    if pin['version']!='flash-lite-next-four-v1':
         return continuation_bridge(source,pin,config=config)
     m=_read(source,f"manifests/{pin['source_run_id']}.json");identity=deepcopy(m);digest=identity.pop('manifest_hash')
     require(_digest(identity)==digest==pin['source_manifest_hash'],'source manifest hash mismatch')
@@ -132,14 +136,18 @@ def bridge(source,*,config=CONFIG,scope=SCOPE):
 
 
 def continuation_bridge(source,pin,*,config=CONFIG):
-    """Validate the existing 28-record chain without rewriting any source file."""
-    prior,schedule=bridge(source/'source',config=config,scope=SCOPE)
+    """Recursively validate fixed predecessor chains without rewriting source files."""
+    version=2 if pin['version']=='flash-lite-next-four-v2' else 3
+    predecessor_scope=SCOPE if version==2 else CONTINUATION_SCOPE
+    previous_indices=[2,3,4,5] if version==2 else [6,7,8,9]
+    preserved=5 if version==2 else 9
+    prior,schedule=bridge(source/'source',config=config,scope=predecessor_scope)
     m=_read(source/'batch',f"manifests/{pin['source_run_id']}.json")
     unsigned=deepcopy(m);digest=unsigned.pop('manifest_hash')
     require(_digest(unsigned)==digest==pin['source_manifest_hash'] and m['commit']==pin['source_commit'] and
             m['git_dirty'] is False and m['provenance_bridge']==prior and
             prior['bridge_hash']==pin['source_bridge_hash'],'previous batch provenance mismatch')
-    expected=prepare(source/'source',m['run_id'],m['owner_approvals'],config=config,scope=SCOPE,
+    expected=prepare(source/'source',m['run_id'],m['owner_approvals'],config=config,scope=predecessor_scope,
                      _source_validation=True).manifest
     # Host runtime metadata is evidence, not an experimental setting.
     for key in ('commit','git_dirty','python_version'):expected[key]=m[key]
@@ -150,14 +158,14 @@ def continuation_bridge(source,pin,*,config=CONFIG):
         archive(source/'source',source/'batch',m['run_id'],Path(scratch)/'verified')
     ledger_record=_read(source/'batch',f"summaries/{m['run_id']}/campaign-ledger.json")
     ledger=ledger_record['ledger']
-    require(len(ledger)==5 and [r['execution_index'] for r in ledger]==[1,2,3,4,5] and
+    require(len(ledger)==preserved and [r['execution_index'] for r in ledger]==list(range(1,preserved+1)) and
             all(r['status']=='terminal_completed' for r in ledger),'uncertain, failed, or duplicate previous attempt')
     audit=_read(source/'batch',f"summaries/{m['run_id']}/dispatch-audit.json")
     require(audit['manifest_hash']==digest and audit['bridge_hash']==prior['bridge_hash'] and
             audit['maximum_new_requests']==4 and audit['provider_calls_entered']==4 and
             audit['automatic_retries']==0 and audit['followup_workflow_dispatches']==0 and
             audit['runner_terminated_normally'] is True and
-            [o['execution_index'] for o in audit['observations']]==[2,3,4,5], 'previous dispatch audit mismatch')
+            [o['execution_index'] for o in audit['observations']]==previous_indices, 'previous dispatch audit mismatch')
     for request,observation in zip(m['requests'],audit['observations']):
         index=request['execution_index'];scenario=schedule.scenarios[index-1]
         messages=build_messages(scenario,'post_update')
@@ -191,11 +199,11 @@ def continuation_bridge(source,pin,*,config=CONFIG):
                     'request_key':f'model-01/{condition}/{index:03d}',
                     'prompt_hash':_digest(build_messages(scenario,condition))})
     proposed=eligible[:4]
-    require([r['execution_index'] for r in proposed]==[6,7,8,9] and
-            [r['identity']['scenario_id'] for r in proposed]==['purpose_change-07','consent_revocation-02',
-                'purpose_change-03','scope_change-04'] and
+    require([r['execution_index'] for r in proposed]==pin['execution_indices'] and
+            [r['identity']['scenario_id'] for r in proposed]==(['purpose_change-07','consent_revocation-02','purpose_change-03','scope_change-04'] if version==2
+                 else ['scope_change-08','scope_change-01','consent_revocation-10','recipient_change-08']) and
             all(r['identity']['condition']=='post_update' for r in proposed),'next frozen identities changed')
-    result={'bridge_version':2,'benchmark_hash':BENCHMARK_HASH,'model':MODEL,'condition':'post_update',
+    result={'bridge_version':version,'benchmark_hash':BENCHMARK_HASH,'model':MODEL,'condition':'post_update',
         'source_github_run_id':pin['source_github_run_id'],'source_attempt':pin['source_attempt'],
         'source_run_id':m['run_id'],'source_manifest_hash':digest,'source_file_hashes':file_hashes(source),
         'prior_bridge_hash':prior['bridge_hash'],'ledger':deepcopy(ledger),'next_requests':proposed,
@@ -244,11 +252,13 @@ def prepare(source,run_id,approval,*,config=CONFIG,scope=SCOPE,_source_validatio
         execution_limits={'max_provider_requests':4,'max_attempts_per_request':1,'stop_on_http_statuses':[429],
                           'stop_after_consecutive_http_503':2,'stop_on_ambiguous':True,'stop_on_unconfirmed_transport':True})
     m.pop('manifest_hash');m['manifest_hash']=_digest(m)
-    if lineage['bridge_version']==2:
+    if lineage['bridge_version']>=2:
         m['dispatch_claim_key']=_digest([r['identity'] for r in lineage['next_requests']])
         m.pop('manifest_hash');m['manifest_hash']=_digest(m)
-        require(not (plan.root/f"claims/{m['dispatch_claim_key']}.json").exists(),'four-identity scope already claimed')
-        for path in (plan.root/'manifests').glob('*.json'):
+        # Reconstructing an archived manifest is read-only; a historical claim
+        # is expected. Live run() always uses the default fresh-dispatch checks.
+        require(_source_validation or not (plan.root/f"claims/{m['dispatch_claim_key']}.json").exists(),'four-identity scope already claimed')
+        for path in (() if _source_validation else (plan.root/'manifests').glob('*.json')):
             other=_read(plan.root,path.relative_to(plan.root).as_posix())
             require(not any(r.get('provider')=='google' and r.get('model')==MODEL and
                             r.get('condition')=='post_update' and r.get('execution_index') in indices
@@ -262,7 +272,7 @@ def run(source,run_id,approval,*,config=CONFIG,scope=SCOPE,transport=None):
     plan=prepare(source,run_id,approval,config=config,scope=scope)
     require(plan.manifest['git_dirty'] is False and bool(plan.manifest['commit']), 'clean committed checkout required')
     require(bool(os.environ.get('GOOGLE_API_KEY')), 'Google credential unavailable; no attempt authorized')
-    if plan.manifest['provenance_bridge']['bridge_version']==2:
+    if plan.manifest['provenance_bridge']['bridge_version']>=2:
         claim={'run_id':run_id,'manifest_hash':plan.manifest['manifest_hash'],
                'dispatch_claim_key':plan.manifest['dispatch_claim_key'],
                'identities':[r['identity'] for r in plan.manifest['provenance_bridge']['next_requests']]}
@@ -325,7 +335,7 @@ def archive(source,results,run_id,destination):
     ledger_record=_read(root,f'summaries/{run_id}/campaign-ledger.json')
     ledger=ledger_record['ledger']
     preserved=len(m['provenance_bridge']['ledger'])
-    if m['provenance_bridge']['bridge_version']==2:
+    if m['provenance_bridge']['bridge_version']>=2:
         claim=_read(root,f'summaries/{run_id}/scope-claim.json')
         require(claim=={'run_id':run_id,'manifest_hash':digest,'dispatch_claim_key':m['dispatch_claim_key'],
                        'identities':[r['identity'] for r in m['provenance_bridge']['next_requests']]} and
@@ -372,7 +382,7 @@ def archive(source,results,run_id,destination):
     import tempfile
     with tempfile.TemporaryDirectory() as scratch:
         original=Path(scratch)/'source';current=Path(scratch)/'batch'
-        if m['provenance_bridge']['bridge_version']==2:
+        if m['provenance_bridge']['bridge_version']>=2:
             archive(Path(source)/'source',Path(source)/'batch',m['provenance_bridge']['source_run_id'],original)
         else:
             stage_archive(source,m['provenance_bridge']['ledger'][0]['source_run_id'],original,compatibility=True)

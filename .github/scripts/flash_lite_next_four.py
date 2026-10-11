@@ -3,7 +3,7 @@ import argparse
 import os
 from pathlib import Path
 from revocable_flow.four_request_bridge import prepare, run, archive
-from revocable_flow.four_request_bridge import SCOPE, CONTINUATION_SCOPE
+from revocable_flow.four_request_bridge import SCOPE, CONTINUATION_SCOPE, NEXT_SCOPE
 
 
 def approvals():
@@ -20,12 +20,12 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('command',choices=('check','run','archive'))
     parser.add_argument('--execute-live',action='store_true')
-    parser.add_argument('--scope',choices=('002-005','006-009'),default='002-005')
+    parser.add_argument('--scope',choices=('002-005','006-009','010-013'),default='002-005')
     args=parser.parse_args()
     try:
         source=Path(os.environ['RUNNER_TEMP'])/'four-source'
         run_id=os.environ['RUN_ID']
-        scope=CONTINUATION_SCOPE if args.scope=='006-009' else SCOPE
+        scope={'002-005':SCOPE,'006-009':CONTINUATION_SCOPE,'010-013':NEXT_SCOPE}[args.scope]
         if args.command=='check':
             plan=prepare(source,run_id,approvals(),scope=scope)
             if plan.manifest['git_dirty'] is not False or not plan.manifest['commit']:

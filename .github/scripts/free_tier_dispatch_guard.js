@@ -21,7 +21,9 @@ module.exports = async function ({github, context, core, phase, priorRunId, work
     }
     const executionSteps = jobs.flatMap(job => (job.steps || []).filter(step =>
       step.name === executionStep));
-    if (executionSteps.some(step => step.status !== 'completed' && step.status !== 'pending')) {
+    // Missing, repeated, or unfinished execution-step history cannot prove
+    // that no provider request entered. Stop rather than infer a free slot.
+    if (executionSteps.length !== 1 || executionSteps.some(step => step.status !== 'completed')) {
       throw new Error('Earlier execution step has an ambiguous outcome');
     }
     const started = jobs.some(job => (job.steps || []).some(step =>
