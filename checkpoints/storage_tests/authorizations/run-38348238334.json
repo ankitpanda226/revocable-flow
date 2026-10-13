@@ -1,0 +1,17 @@
+
+{
+  "approved_at_epoch": 1791866982,
+  "binding": {
+    "execution_commit": "8364647a742f8c8c961c9d010d666705e0962825",
+    "invocation_nonce": "storage-only-v1:cd3b742dc908496ab26113f1d0ac2c7b0f5b1d5e991f4eedaacb4fc61b06d3af",
+    "job_id": 115134512105,
+    "repository": "ankitpanda226/revocable-flow",
+    "run_attempt": 1,
+    "run_id": 38348238334,
+    "runner_id": 100000016
+  },
+  "scope_hash": "e16a2973ecbe0c567c5acfd68690742615007c5a35b3e4290f2fa834c12df60b",
+  "storage_only_approved": true,
+  "version": "SYN-STORAGE-ONLY-v1",
+  "workflow_path": ".github/workflows/storage-only-integration.yml"
+}
