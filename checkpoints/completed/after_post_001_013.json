@@ -1,0 +1,169 @@
+{
+  "version": "flash-lite-owner-archive-v1",
+  "github_run_id": 38110745024,
+  "run_attempt": 1,
+  "batch_manifest_hash": "d8d0f646d5f5cbec68262921f9c7a8d0bcb4632db06d93a878a69ae6c54a0af2",
+  "scientific_file_tree_hash": "2f9361cc49d207b9073190a599e0a3ee1eed34d732e855b1168ccfded0068b17",
+  "zip_sha256": "6143b4d1afd1d8f69d5301df0e670440171618fa61e12a83bb252bba11ef191d",
+  "cumulative_ledger_hash": "c95b7f3f5bb0f32563d1c46fc3e1ce73c5d6ae623e81b95dca71e138d1f1abc9",
+  "terminal_identities": [
+    {
+      "request_key": "model-01/post_update/001",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "scope_change-09"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "invalid"
+    },
+    {
+      "request_key": "model-01/post_update/002",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "purpose_change-04"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "invalid"
+    },
+    {
+      "request_key": "model-01/post_update/003",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "consent_revocation-03"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "valid"
+    },
+    {
+      "request_key": "model-01/post_update/004",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "scope_change-07"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "valid"
+    },
+    {
+      "request_key": "model-01/post_update/005",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "consent_revocation-08"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "valid"
+    },
+    {
+      "request_key": "model-01/post_update/006",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "purpose_change-07"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "invalid"
+    },
+    {
+      "request_key": "model-01/post_update/007",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "consent_revocation-02"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "valid"
+    },
+    {
+      "request_key": "model-01/post_update/008",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "purpose_change-03"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "invalid"
+    },
+    {
+      "request_key": "model-01/post_update/009",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "scope_change-04"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "valid"
+    },
+    {
+      "request_key": "model-01/post_update/010",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "scope_change-08"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "invalid"
+    },
+    {
+      "request_key": "model-01/post_update/011",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "scope_change-01"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "invalid"
+    },
+    {
+      "request_key": "model-01/post_update/012",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "consent_revocation-10"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "invalid"
+    },
+    {
+      "request_key": "model-01/post_update/013",
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "recipient_change-08"
+      },
+      "status": "terminal_completed",
+      "primary_parse_status": "valid"
+    }
+  ],
+  "owner_verified_two_independent_archive_copies": false,
+  "archive_references": []
+}

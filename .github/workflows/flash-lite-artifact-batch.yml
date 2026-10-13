@@ -1,0 +1,110 @@
+{
+  "name": "Flash-Lite artifact batch 014\u2013023 (live disabled)",
+  "on": {
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "flash-lite-pilot-v1",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "artifact_batch": {
+      "name": "artifact_batch",
+      "if": "github.ref == 'refs/heads/main' && github.run_attempt == 1",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 30,
+      "env": {
+        "PYTHONPATH": "src"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 0
+          }
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Install project",
+          "run": "python -m pip install ."
+        },
+        {
+          "name": "Full offline tests and benchmark validation",
+          "env": {
+            "GITHUB_STEP_SUMMARY": "",
+            "GITHUB_OUTPUT": ""
+          },
+          "run": "python -m unittest discover -s tests -v\npython -m revocable_flow.cli validate data/pilot/scenarios.jsonl --pilot"
+        },
+        {
+          "name": "Read-only predecessor run provenance",
+          "uses": "actions/github-script@v7",
+          "with": {
+            "script": "const {data:r}=await github.rest.actions.getWorkflowRun({owner:context.repo.owner,repo:context.repo.repo,run_id:38110745024}); if(context.repo.owner!=='ankitpanda226'||context.repo.repo!=='revocable-flow'||r.run_attempt!==1||r.path!=='.github/workflows/flash-lite-010-013.yml'||r.head_sha!=='a55ad525403cef7673741de987aaab9d85bbae61'||r.head_branch!=='main'||r.event!=='workflow_dispatch'||r.status!=='completed'||r.conclusion!=='success') throw new Error('Source run mismatch');"
+          }
+        },
+        {
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "name": "flash-lite-010-013-results",
+            "run-id": 38110745024,
+            "github-token": "${{ github.token }}",
+            "path": "${{ runner.temp }}/artifact-source"
+          }
+        },
+        {
+          "name": "Verify frozen predecessor and exact 014\u2013023 scope",
+          "run": "python .github/scripts/artifact_batch_control.py check"
+        },
+        {
+          "name": "Reject prior execution or uncertain workflow history",
+          "uses": "actions/github-script@v7",
+          "with": {
+            "script": "const guard=require(process.env.GITHUB_WORKSPACE+'/.github/scripts/artifact_batch_history_guard.js'); await guard({github,context}); const old=require(process.env.GITHUB_WORKSPACE+'/.github/scripts/free_tier_dispatch_guard.js'); await old({github,context,core,phase:'small_pilot',priorRunId:'38110745024',workflowId:'flash-lite-010-013.yml',executionStep:'Execute only frozen requests 010\u2013013',predecessorPath:'.github/workflows/flash-lite-010-013.yml',expectedPriorCommit:'a55ad525403cef7673741de987aaab9d85bbae61'}); await old({github,context,core,phase:'connectivity',priorRunId:'',workflowId:'free-tier-pilot.yml',executionStep:'Run only explicitly selected bounded phase'});"
+          }
+        },
+        {
+          "name": "Execute owner-bound frozen 014\u2013023",
+          "id": "execute",
+          "if": "${{ false }}",
+          "env": {
+            "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}",
+            "GITHUB_TOKEN": "${{ github.token }}"
+          },
+          "run": "python .github/scripts/artifact_batch_control.py execute"
+        },
+        {
+          "name": "Seal exact records and cumulative ledger",
+          "id": "seal",
+          "if": "${{ always() && steps.execute.outcome != 'skipped' && steps.execute.outcome != '' }}",
+          "env": {
+            "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}",
+            "GITHUB_TOKEN": "${{ github.token }}"
+          },
+          "run": "python .github/scripts/artifact_batch_control.py seal"
+        },
+        {
+          "name": "Upload inspected self-contained artifact",
+          "uses": "actions/upload-artifact@v4",
+          "if": "${{ always() && steps.seal.outputs.safe == 'true' }}",
+          "with": {
+            "name": "flash-lite-artifact-batch-014-023-results",
+            "path": "${{ runner.temp }}/artifact-upload/",
+            "retention-days": 90,
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    }
+  }
+}

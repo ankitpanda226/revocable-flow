@@ -1,0 +1,116 @@
+{
+  "name": "Flash-Lite continuation plan (offline only)",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "condition": {
+          "description": "Frozen condition; next unattempted schedule prefix only",
+          "type": "choice",
+          "options": [
+            "post_update",
+            "pre_update"
+          ],
+          "default": "post_update",
+          "required": true
+        },
+        "start": {
+          "description": "First frozen execution index (integer, never a range string)",
+          "type": "string",
+          "default": "14",
+          "required": true
+        },
+        "end": {
+          "description": "Last index; at most 20 requests; default plan 014\u2013023",
+          "type": "string",
+          "default": "23",
+          "required": true
+        },
+        "approve_offline_plan": {
+          "description": "Approve ONLY offline verification/planning; zero generation calls",
+          "type": "boolean",
+          "default": false,
+          "required": true
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "flash-lite-pilot-v1",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "plan": {
+      "if": "github.ref == 'refs/heads/main' && inputs.approve_offline_plan",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 10,
+      "env": {
+        "PYTHONPATH": "src",
+        "PLAN_CONDITION": "${{ inputs.condition }}",
+        "PLAN_START": "${{ inputs.start }}",
+        "PLAN_END": "${{ inputs.end }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Install project",
+          "run": "python -m pip install ."
+        },
+        {
+          "name": "Offline tests and benchmark validation",
+          "run": "python -m unittest discover -s tests -v\npython -m revocable_flow.cli validate data/pilot/scenarios.jsonl --pilot",
+          "env": {
+            "GITHUB_STEP_SUMMARY": "",
+            "GITHUB_OUTPUT": ""
+          }
+        },
+        {
+          "name": "Read-only source run provenance verification",
+          "uses": "actions/github-script@v7",
+          "with": {
+            "script": "const {data:r}=await github.rest.actions.getWorkflowRun({owner:context.repo.owner,repo:context.repo.repo,run_id:38110745024}); if(context.repo.owner!=='ankitpanda226'||context.repo.repo!=='revocable-flow'||r.run_attempt!==1||r.path!=='.github/workflows/flash-lite-010-013.yml'||r.head_sha!=='a55ad525403cef7673741de987aaab9d85bbae61'||r.head_branch!=='main'||r.event!=='workflow_dispatch'||r.status!=='completed'||r.conclusion!=='success') throw new Error('Checkpoint run mismatch');"
+          }
+        },
+        {
+          "name": "Download existing thirteen-attempt scientific checkpoint",
+          "uses": "actions/download-artifact@v4",
+          "with": {
+            "name": "flash-lite-010-013-results",
+            "run-id": 38110745024,
+            "github-token": "${{ github.token }}",
+            "path": "${{ runner.temp }}/continuation-source"
+          }
+        },
+        {
+          "name": "Verify immutable checkpoint and write offline range plan",
+          "id": "plan",
+          "run": "python -m revocable_flow.continuation_checkpoint --source \"$RUNNER_TEMP/continuation-source\" --condition \"$PLAN_CONDITION\" --start \"$PLAN_START\" --end \"$PLAN_END\" --approve-offline-plan --output \"$RUNNER_TEMP/continuation-plan/plan.json\""
+        },
+        {
+          "name": "Upload offline plan only; no credentials or model requests",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "flash-lite-continuation-offline-plan",
+            "path": "${{ runner.temp }}/continuation-plan/plan.json",
+            "if-no-files-found": "error",
+            "retention-days": 90
+          }
+        }
+      ]
+    }
+  }
+}

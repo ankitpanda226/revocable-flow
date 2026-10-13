@@ -1,0 +1,149 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "provider": "google",
+  "condition": "post_update",
+  "parameters": {
+    "max_output_tokens": 512,
+    "seed": 20261007,
+    "temperature": 0,
+    "top_p": 1
+  },
+  "requests": [
+    {
+      "execution_index": 14,
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "purpose_change-10"
+      },
+      "prompt_hash": "a59e667a48ec9ce4c1ee51f40bd13ba0cbd53d16e62ff2583342e31b792c237f",
+      "request_key": "model-01/post_update/014"
+    },
+    {
+      "execution_index": 15,
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "scope_change-10"
+      },
+      "prompt_hash": "1beb3b28919b251c0f3bb3589cfc6ae8fb3c5657bf4b9336dafebc77cead685f",
+      "request_key": "model-01/post_update/015"
+    },
+    {
+      "execution_index": 16,
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "recipient_change-09"
+      },
+      "prompt_hash": "1d1501fdec5d665be297c33fe0611466edae501df834be9d844204915eecf675",
+      "request_key": "model-01/post_update/016"
+    },
+    {
+      "execution_index": 17,
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "purpose_change-02"
+      },
+      "prompt_hash": "7419532d11de0ff782ea46851643166b64192e99b994e4d0fc69cd32644a2bac",
+      "request_key": "model-01/post_update/017"
+    },
+    {
+      "execution_index": 18,
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "recipient_change-06"
+      },
+      "prompt_hash": "10009238a0a6743924f29e68c2da9345b318ba377e22ca4532013a284782995c",
+      "request_key": "model-01/post_update/018"
+    },
+    {
+      "execution_index": 19,
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "purpose_change-01"
+      },
+      "prompt_hash": "a9d8d8ce7514a1be694bdc372089b79f8dd207acc24220a560e4f3c00602eb4d",
+      "request_key": "model-01/post_update/019"
+    },
+    {
+      "execution_index": 20,
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "recipient_change-05"
+      },
+      "prompt_hash": "3fe8494472621703f4f6c37fb1654057155b9d03d0c515c544e0e464200d42b3",
+      "request_key": "model-01/post_update/020"
+    },
+    {
+      "execution_index": 21,
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "recipient_change-02"
+      },
+      "prompt_hash": "79e3b92f005ba0a73653c5040a61ac081e3c14f90e4a35bd5e1c602f7f9fa169",
+      "request_key": "model-01/post_update/021"
+    },
+    {
+      "execution_index": 22,
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "consent_revocation-06"
+      },
+      "prompt_hash": "c2ea7030c1c4dcdeb14d6212409b4b6c669bf238373ffcd5ad7a3c7c23a3bb8f",
+      "request_key": "model-01/post_update/022"
+    },
+    {
+      "execution_index": 23,
+      "identity": {
+        "condition": "post_update",
+        "model": "gemini-3.5-flash-lite",
+        "provider": "google",
+        "repetition": 1,
+        "scenario_id": "scope_change-05"
+      },
+      "prompt_hash": "7de14925cfad40c6f0fc1327b549b1fce8c119e49a674cdbf54aafabca302e87",
+      "request_key": "model-01/post_update/023"
+    }
+  ],
+  "maximum_new_requests": 10,
+  "max_attempts_per_identity": 1,
+  "automatic_retries": 0,
+  "followup_dispatches": 0,
+  "later_phases_enabled": false,
+  "minimum_dispatch_interval_seconds": 12,
+  "maximum_total_research_budget_usd": 4,
+  "version": "flash-lite-artifact-batch-v1",
+  "live_execution_enabled": false,
+  "source_manifest_hash": "d8d0f646d5f5cbec68262921f9c7a8d0bcb4632db06d93a878a69ae6c54a0af2",
+  "authorization_path": "checkpoints/authorizations/post_update_014_023.json",
+  "predecessor_run_id": 38110745024,
+  "predecessor_attempt": 1,
+  "source_artifact": "flash-lite-010-013-results",
+  "maximum_authorized_paid_cost_usd": 0,
+  "predecessor_archive_summary": "checkpoints/completed/after_post_001_013.json"
+}
