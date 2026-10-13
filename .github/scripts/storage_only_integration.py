@@ -23,11 +23,40 @@ WORKFLOW = '.github/workflows/storage-only-integration.yml'
 NAMESPACE = 'SYN-STORAGE-ONLY-v1'
 IDENTITIES = ['SYN-STORAGE-ONLY-001', 'SYN-STORAGE-ONLY-002']
 PROVIDER_KEYS = ('GOOGLE_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY')
+DIAGNOSTIC_STAGE = 'initialization'
+
+
+class StorageTestFailure(ValueError):
+    """Controlled, credential-free reason supplied only by this helper."""
+
+
+def diagnostic(event, **details):
+    allowed = {'stage', 'reason', 'exception_type', 'http_status', 'operation',
+               'elapsed_seconds', 'poll_count', 'approval_age_seconds', 'timestamp_type'}
+    require(set(details) <= allowed, 'unsupported diagnostic fields')
+    record = {'namespace': NAMESPACE, 'event': event, **details}
+    # Never print exception bodies, credentials, response bodies or authorization JSON.
+    data = encode(record)
+    try:
+        safe(data)
+        require(not re.search(rb'storage-only-v1:[0-9a-f]{64}', data),
+                'full invocation nonce excluded from diagnostics')
+    except ValueError:
+        print('SYN storage diagnostic suppressed: unsafe content', flush=True)
+        return
+    print(json.dumps(record, sort_keys=True, allow_nan=False), flush=True)
+
+
+def report_failure(error):
+    details = {'stage': DIAGNOSTIC_STAGE, 'exception_type': type(error).__name__}
+    if isinstance(error, StorageTestFailure):
+        details['reason'] = str(error)
+    diagnostic('storage_test_failed', **details)
 
 
 def require(value, message):
     if not value:
-        raise ValueError(message)
+        raise StorageTestFailure(message)
 
 
 def parse(data):
@@ -87,9 +116,13 @@ def get(path):
     except urllib.error.HTTPError as error:
         if error.code == 404:
             return None
-        raise ValueError('GitHub metadata read failed') from None
-    except Exception:
-        raise ValueError('GitHub metadata read uncertain') from None
+        diagnostic('github_read_failed', stage=DIAGNOSTIC_STAGE, http_status=error.code,
+                   operation='read-only metadata GET', exception_type='HTTPError')
+        raise StorageTestFailure('GitHub metadata read failed') from None
+    except Exception as error:
+        diagnostic('github_read_uncertain', stage=DIAGNOSTIC_STAGE,
+                   operation='read-only metadata GET', exception_type=type(error).__name__)
+        raise StorageTestFailure('GitHub metadata read uncertain') from None
 
 
 def safe(data):
@@ -131,18 +164,25 @@ def validate(evidence, binding, *, now=None, check_age=True):
     require(hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == evidence['blob_sha'],
             'authorization blob mismatch')
     record = parse(data)
-    require(set(record) == {'version', 'workflow_path', 'binding', 'scope_hash', 'approved_at_epoch', 'storage_only_approved'} and
-            record['version'] == NAMESPACE and record['workflow_path'] == WORKFLOW and encode(record['binding']) == encode(binding) and
-            record['scope_hash'] == digest(encode(scope())) and record['storage_only_approved'] is True,
-            'wrong or missing storage-only authorization')
+    require(set(record) == {'version', 'workflow_path', 'binding', 'scope_hash', 'approved_at_epoch', 'storage_only_approved'},
+            'authorization fields missing or unexpected')
+    require(record['version'] == NAMESPACE and record['workflow_path'] == WORKFLOW,
+            'authorization workflow or namespace mismatch')
+    require(encode(record['binding']) == encode(binding), 'authorization run or invocation binding mismatch')
+    require(record['scope_hash'] == digest(encode(scope())), 'authorization scope hash mismatch')
+    require(record['storage_only_approved'] is True, 'storage-only approval must be true')
     stamp = record['approved_at_epoch']
-    require(type(stamp) in (int, float) and math.isfinite(stamp), 'invalid approval time')
+    require(type(stamp) in (int, float) and math.isfinite(stamp), 'approved_at_epoch must be an unquoted JSON number')
     if check_age:
-        require(0 <= (time.time() if now is None else now) - stamp <= 300, 'stale/future approval')
+        age = (time.time() if now is None else now) - stamp
+        require(age >= 0, 'approval timestamp is future dated')
+        require(age <= 300, 'authorization expired; approval older than 300 seconds')
     return record
 
 
 def wait_for_owner(root, *, read=get, sleep=time.sleep, clock=time.monotonic):
+    global DIAGNOSTIC_STAGE
+    DIAGNOSTIC_STAGE = 'workflow_context'
     require(not any(os.environ.get(k) for k in PROVIDER_KEYS), 'provider credential must not be present')
     require(os.environ['GITHUB_REPOSITORY'] == REPO and os.environ['GITHUB_REF'] == 'refs/heads/main' and
             os.environ['GITHUB_EVENT_NAME'] == 'workflow_dispatch' and os.environ['GITHUB_RUN_ATTEMPT'] == '1',
@@ -166,20 +206,44 @@ def wait_for_owner(root, *, read=get, sleep=time.sleep, clock=time.monotonic):
                 'storage_only_approved': False}
     print('TEST ONLY: owner must create once at ' + auth_path(run_id), flush=True)
     print(encode(template).decode(), flush=True)
-    deadline = clock() + 600
+    started = clock()
+    deadline = started + 600
+    polls = 0
+    DIAGNOSTIC_STAGE = 'authorization_poll'
+    diagnostic('waiting_for_owner', stage=DIAGNOSTIC_STAGE, elapsed_seconds=0, poll_count=0)
     while clock() < deadline:
+        polls += 1
         content = read(PREFIX + '/contents/' + auth_path(run_id) + '?ref=main')
         if content is not None:
+            DIAGNOSTIC_STAGE = 'authorization_content'
+            diagnostic('authorization_found', stage=DIAGNOSTIC_STAGE,
+                       elapsed_seconds=round(clock() - started, 3), poll_count=polls)
             require(content['type'] == 'file' and content['encoding'] == 'base64', 'invalid authorization content')
             data = base64.b64decode(''.join(content['content'].split()), validate=True).decode()
             history = read(PREFIX + '/commits?path=' + auth_path(run_id) + '&sha=main&per_page=100')
             require(isinstance(history, list) and len(history) == 1, 'authorization file edited/reused')
             evidence = {'path': auth_path(run_id), 'record_bytes': data, 'blob_sha': content['sha'],
                         'introduction_commit': history[0]['sha'], 'file_history': [h['sha'] for h in history]}
+            DIAGNOSTIC_STAGE = 'authorization_validation'
+            record = parse(data)
+            stamp = record.get('approved_at_epoch') if isinstance(record, dict) else None
+            details = {'stage': DIAGNOSTIC_STAGE, 'timestamp_type': type(stamp).__name__}
+            if type(stamp) in (int, float) and math.isfinite(stamp):
+                age = time.time() - stamp
+                if math.isfinite(age):
+                    details['approval_age_seconds'] = round(age, 3)
+            diagnostic('checking_authorization', **details)
             validate(evidence, binding)
+            diagnostic('authorization_accepted', stage=DIAGNOSTIC_STAGE,
+                       elapsed_seconds=round(clock() - started, 3), poll_count=polls)
             return evidence, binding
+        if polls == 1 or polls % 4 == 0:
+            diagnostic('authorization_not_found', stage=DIAGNOSTIC_STAGE,
+                       elapsed_seconds=round(clock() - started, 3), poll_count=polls)
         sleep(15)
-    raise ValueError('test approval timeout; no synthetic execution')
+    diagnostic('authorization_wait_expired', stage=DIAGNOSTIC_STAGE,
+               elapsed_seconds=round(clock() - started, 3), poll_count=polls)
+    raise StorageTestFailure('authorization missing at waiting deadline; no synthetic execution')
 
 
 def synthetic_execute(root, evidence, binding):
@@ -290,6 +354,7 @@ def extract_test_archive(archive, root, expected_manifest_hash):
 
 
 def main():
+    global DIAGNOSTIC_STAGE
     parser = argparse.ArgumentParser(description='SYN storage-only integration; zero model access')
     parser.add_argument('command', choices=('handshake', 'verify', 'archives', 'extract'))
     parser.add_argument('--root', type=Path, required=True)
@@ -300,14 +365,18 @@ def main():
     args = parser.parse_args()
     if args.command == 'handshake':
         evidence, binding = wait_for_owner(args.root)
+        DIAGNOSTIC_STAGE = 'synthetic_storage'
         receipt = synthetic_execute(args.root, evidence, binding)
         with Path(os.environ['GITHUB_OUTPUT']).open('a') as stream:
             stream.write('manifest_sha256=' + receipt['manifest_sha256'] + '\n')
     elif args.command == 'verify':
+        DIAGNOSTIC_STAGE = 'artifact_readback'
         receipt = verify(args.root, args.manifest_sha256)
     elif args.command == 'extract':
+        DIAGNOSTIC_STAGE = 'safe_archive_extraction'
         receipt = extract_test_archive(args.archive, args.root, args.manifest_sha256)
     else:
+        DIAGNOSTIC_STAGE = 'dual_archive_readback'
         receipt = archive_copies(args.root, args.copy_a, args.copy_b, args.manifest_sha256)
     print(encode(receipt).decode())
 
@@ -315,5 +384,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, TypeError, KeyError, OSError, zipfile.BadZipFile):
+    except (ValueError, TypeError, KeyError, OSError, zipfile.BadZipFile) as error:
+        report_failure(error)
         raise SystemExit('Storage-only test stopped; no model access or production authorization.') from None

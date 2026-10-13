@@ -12,6 +12,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import Mock, patch
 import zipfile
 
@@ -67,6 +68,54 @@ class StorageOnlyTests(unittest.TestCase):
                         {**evidence, 'blob_sha': '0' * 40}, {**evidence, 'record_bytes': '{}'}):
             with self.assertRaises(ValueError): s.validate(changed, binding, now=1000)
 
+    def test_scope_and_quoted_timestamp_have_distinct_diagnostics_without_coercion(self):
+        binding, evidence = self.fixture()
+        record = s.parse(evidence['record_bytes'])
+        bad_scope = {**record, 'scope_hash': 'e16a2973cebe0c567c5acfd68690742615007c5a35b3e4290f2fa834c12df60b',
+                     'approved_at_epoch': '1000'}
+        with self.assertRaisesRegex(s.StorageTestFailure, 'scope hash mismatch'):
+            s.validate(self.evidence(bad_scope), binding, now=1000)
+        quoted = {**record, 'approved_at_epoch': '1000'}
+        with self.assertRaisesRegex(s.StorageTestFailure, 'unquoted JSON number'):
+            s.validate(self.evidence(quoted), binding, now=1000)
+        self.assertEqual(quoted['approved_at_epoch'], '1000')
+        with self.assertRaisesRegex(s.StorageTestFailure, 'authorization expired'):
+            s.validate(evidence, binding, now=1301)
+        with self.assertRaisesRegex(s.StorageTestFailure, 'future dated'):
+            s.validate(evidence, binding, now=999)
+
+    def test_github_failure_diagnostics_show_status_not_exception_secret(self):
+        secret = 'SYN-NOT-A-REAL-TOKEN-DO-NOT-PRINT'
+        failures = [urllib.error.HTTPError('https://api.github.com', 403, secret, {}, None),
+                    urllib.error.URLError(secret)]
+        with patch.dict(os.environ, {'GITHUB_TOKEN': secret}, clear=True):
+            for error in failures:
+                with patch('urllib.request.build_opener') as opener, patch('sys.stdout', new_callable=io.StringIO) as output:
+                    opener.return_value.open.side_effect = error
+                    with self.assertRaises(s.StorageTestFailure): s.get(s.PREFIX + '/actions/runs/900')
+                    logged = output.getvalue()
+                    self.assertNotIn(secret, logged)
+                    record = json.loads(logged)
+                    if isinstance(error, urllib.error.HTTPError): self.assertEqual(record['http_status'], 403)
+                    self.assertEqual(record['exception_type'], type(error).__name__)
+                    self.assertNotIn('Authorization', logged)
+
+    def test_cli_failure_report_does_not_echo_arbitrary_exception_content(self):
+        with patch('sys.stdout', new_callable=io.StringIO) as output:
+            s.report_failure(ValueError('SYN unsafe response-body/private content'))
+            record = json.loads(output.getvalue())
+            self.assertNotIn('unsafe', output.getvalue())
+            self.assertEqual(record['exception_type'], 'ValueError')
+            self.assertNotIn('reason', record)
+        with patch('sys.stdout', new_callable=io.StringIO) as output:
+            s.report_failure(s.StorageTestFailure('authorization scope hash mismatch'))
+            self.assertEqual(json.loads(output.getvalue())['reason'], 'authorization scope hash mismatch')
+        with patch('sys.stdout', new_callable=io.StringIO) as output:
+            nonce = 'storage-only-v1:' + 'b' * 64
+            s.report_failure(s.StorageTestFailure('unexpected nonce ' + nonce))
+            self.assertNotIn(nonce, output.getvalue())
+            self.assertIn('suppressed', output.getvalue())
+
     def test_read_only_wait_requires_new_commit_in_actual_invocation(self):
         ticks = [0]
         env = {'GITHUB_REPOSITORY': s.REPO, 'GITHUB_REF': 'refs/heads/main', 'GITHUB_EVENT_NAME': 'workflow_dispatch',
@@ -107,7 +156,8 @@ class StorageOnlyTests(unittest.TestCase):
             return None
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, env, clear=True), patch('sys.stdout', new_callable=io.StringIO):
             root = Path(tmp) / 'results'
-            with self.assertRaises(ValueError): s.wait_for_owner(root, read=read, sleep=lambda sec: ticks.__setitem__(0, ticks[0] + sec), clock=lambda: ticks[0])
+            with self.assertRaisesRegex(s.StorageTestFailure, 'authorization missing at waiting deadline'):
+                s.wait_for_owner(root, read=read, sleep=lambda sec: ticks.__setitem__(0, ticks[0] + sec), clock=lambda: ticks[0])
             self.assertFalse((root / 'synthetic').exists())
 
     def test_provider_credentials_and_unlisted_network_destinations_fail_before_network(self):
