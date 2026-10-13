@@ -1,0 +1,52 @@
+{
+  "name": "RevocableFlow storage-only authorization integration (SYN test)",
+  "on": {"workflow_dispatch": {}},
+  "permissions": {"contents": "read", "actions": "read"},
+  "concurrency": {"group": "revocable-flow-storage-only-test-v1", "cancel-in-progress": false},
+  "jobs": {
+    "storage_only": {
+      "name": "storage_only",
+      "if": "github.ref == 'refs/heads/main' && github.run_attempt == 1",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 20,
+      "steps": [
+        {"uses": "actions/checkout@v4", "with": {"persist-credentials": false}},
+        {"uses": "actions/setup-python@v5", "with": {"python-version": "3.12"}},
+        {
+          "name": "Storage-only tests; no research/provider imports",
+          "run": "python -m unittest discover -s tests -p test_storage_only_integration.py -v"
+        },
+        {
+          "name": "Require production controls to remain disabled",
+          "run": "python - <<'PY'\nimport json\nfrom pathlib import Path\np=json.loads(Path('configs/flash_lite_artifact_batch_014_023_v1.json').read_text())\nw=json.loads(Path('.github/workflows/flash-lite-artifact-batch.yml').read_text())\nassert p['live_execution_enabled'] is False and p['later_phases_enabled'] is False\nassert next(s for s in w['jobs']['artifact_batch']['steps'] if s.get('id')=='execute')['if']==('$'+'{{ false }}')\nassert not Path(p['authorization_path']).exists()\nPY"
+        },
+        {
+          "name": "Wait for test-only owner commit then create SYN storage records",
+          "id": "handshake",
+          "env": {"GITHUB_TOKEN": "${{ github.token }}"},
+          "run": "python .github/scripts/storage_only_integration.py handshake --root \"$RUNNER_TEMP/storage-only-results\""
+        },
+        {
+          "name": "Upload only verified synthetic test records",
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "SYN-storage-only-integration-results",
+            "path": "${{ runner.temp }}/storage-only-results/",
+            "if-no-files-found": "error",
+            "retention-days": 90
+          }
+        },
+        {
+          "name": "Read back same-run test artifact",
+          "uses": "actions/download-artifact@v4",
+          "with": {"name": "SYN-storage-only-integration-results", "path": "${{ runner.temp }}/storage-only-readback/"}
+        },
+        {
+          "name": "Verify downloaded test manifest, hashes and authorization evidence",
+          "env": {"EXPECTED_MANIFEST_SHA256": "${{ steps.handshake.outputs.manifest_sha256 }}"},
+          "run": "python .github/scripts/storage_only_integration.py verify --root \"$RUNNER_TEMP/storage-only-readback\" --manifest-sha256 \"$EXPECTED_MANIFEST_SHA256\""
+        }
+      ]
+    }
+  }
+}
